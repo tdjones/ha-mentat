@@ -1,0 +1,54 @@
+stages:
+  - lint
+  - test
+
+default:
+  image: python:3.14
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+.install: &install
+  before_script:
+    - pip install -r requirements-test.txt
+
+ruff:
+  stage: lint
+  before_script:
+    - pip install "$(grep '^ruff==' requirements-test.txt)"
+  script:
+    - ruff check .
+    - ruff format --check .
+
+mypy:
+  stage: lint
+  <<: *install
+  script:
+    - mypy --strict --ignore-missing-imports custom_components/mentat
+
+pytest:
+  stage: test
+  <<: *install
+  script:
+    - pytest --cov-report=xml:coverage.xml --cov-fail-under=95
+  coverage: '/^TOTAL.*\s+(\d+(?:\.\d+)?)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# hassfest ships as a container whose entrypoint finds custom_components/*/manifest.json
+# relative to the working directory, which in a GitLab job is the clone. The image
+# is built for amd64 only, which is what GitLab's shared runners are.
+hassfest:
+  stage: lint
+  image:
+    name: ghcr.io/home-assistant/hassfest
+    entrypoint: [""]
+  script:
+    - /usr/src/homeassistant/script/hassfest/docker/entrypoint.sh

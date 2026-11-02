@@ -1,0 +1,159 @@
+# House mode: decide what the house is doing from the last hour of changes.
+#
+# One window watch asks three questions in one request. The window keeps an hour
+# of state changes for the entities below, plus every person the front door
+# camera detects, and sends that log beside the current readings. Mentat adds to
+# each entity how long it has held its state and how often it changed in the
+# window. A binary sensor also gets how long it was on. The model never has to
+# subtract timestamps.
+#
+# The watch asks once the log has been quiet for 20 seconds, and every 10 minutes
+# on top of that. Each change restarts the 20 second wait. The wait ends at most
+# three settle periods after the first change, so a house that never goes quiet
+# is still judged about once a minute.
+#
+# Paste this under `mentat:` in configuration.yaml or a package, and swap the
+# entities for yours. The household here is two adults, Alice and Bob, and a
+# teenager, Carol, whose phone counts for bedtime only when no adult is home.
+#
+# The watch makes sensor.<entry>_house_mode with one of six modes, and
+# sensor.<entry>_everyone_in_bed and sensor.<entry>_house_empty with
+# probabilities. Each of the two nouls also gets a verdict binary sensor at its
+# cutoff. Every answer fires `mentat_decision` with `watch: house_mode`.
+
+mentat:
+  - name: House mode
+    scan_interval: 600
+    window:
+      duration: "01:00:00"
+      max_events: 150
+      settle: 20
+      evaluate: both
+      events:
+        - event_type: person_detection_captured
+          data:
+            cameraName: front_door
+          label: front door camera saw a person
+    entities:
+      # People and the phones they charge at night.
+      - person.alice
+      - person.bob
+      - person.carol
+      - binary_sensor.alice_phone_charging
+      - binary_sensor.bob_phone_charging
+      - binary_sensor.carol_phone_charging
+      # Interior motion.
+      - binary_sensor.living_room_motion
+      - binary_sensor.basement_motion
+      # Exterior doors.
+      - binary_sensor.front_door
+      - binary_sensor.patio_door
+      - binary_sensor.garage_entry_door
+      - binary_sensor.garage_side_door
+      - binary_sensor.garage_overhead_door
+      # Outdoor cameras that detect people.
+      - binary_sensor.front_door_camera_person
+      - binary_sensor.garage_camera_person
+      - binary_sensor.driveway_camera_person
+      - binary_sensor.backyard_camera_person
+      # Time of day and media.
+      - sun.sun
+      - media_player.kitchen_speaker
+      - media_player.living_room_tv
+    # The facts a template can work out better than a model: who counts for
+    # bedtime, whose phone has been on the charger for 20 minutes or more, and
+    # what part of the day it is. Sent as the note next to the readings.
+    #
+    # The 20 minutes come from last_changed, which Home Assistant stamps afresh
+    # on every restart and after an `unavailable` blip, so for 20 minutes after
+    # a restart a phone that has charged all night does not count yet.
+    note: >-
+      {%- set people = [
+        ('person.alice', 'binary_sensor.alice_phone_charging', true),
+        ('person.bob', 'binary_sensor.bob_phone_charging', true),
+        ('person.carol', 'binary_sensor.carol_phone_charging', false),
+      ] -%}
+      {%- set ns = namespace(adult_home=false, counted=0, on_charger=0) -%}
+      {%- for person, phone, adult in people if adult and is_state(person, 'home') -%}
+        {%- set ns.adult_home = true -%}
+      {%- endfor -%}
+      {%- for person, phone, adult in people -%}
+        {%- if is_state(person, 'home') and (adult or not ns.adult_home) -%}
+          {%- set ns.counted = ns.counted + 1 -%}
+          {%- if is_state(phone, 'on')
+                and (now() - states[phone].last_changed).total_seconds() >= 1200 -%}
+            {%- set ns.on_charger = ns.on_charger + 1 -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set h = now().hour -%}
+      {%- set part = 'early morning' if 5 <= h < 9
+            else 'daytime' if 9 <= h < 17
+            else 'evening' if 17 <= h < 21
+            else 'late evening' if h >= 21
+            else 'overnight' -%}
+      Time of day: {{ part }}; the sun is
+      {{ 'up' if is_state('sun.sun', 'above_horizon') else 'down' }}.
+      {{ ns.on_charger }} of {{ ns.counted }} people who count for bedtime have
+      had their phone on the charger for 20 minutes or more.
+      {%- if ns.adult_home and is_state('person.carol', 'home') %}
+      Carol is home but does not count for bedtime while an adult is home.
+      {%- endif %}
+    questions:
+      - name: House mode
+        type: choice
+        # Standing facts go with the question, under a key the model reads.
+        brief: &household_rules
+          household_rules: >-
+            In this household, people put their phones on the charger when they go
+            to bed, so an adult's phone on the charger at night means that adult
+            is in bed. Carol's phone is ignored for bedtime whenever Alice or Bob
+            is home. Long gaps with no interior motion at night also mean people
+            are in bed.
+        instructions: Using `household_rules`, what is the household doing right now?
+        criteria:
+          asleep: >-
+            Night: everyone home has gone to bed (adults' phones on chargers, no
+            recent interior motion, no media on)
+          winding_down: >-
+            Evening before bed: people home and still up (recent interior motion,
+            an adult's phone off the charger, or media on)
+          active: "Daytime or evening: people home and up and about"
+          waking: >-
+            Early morning: people getting up (phones coming off chargers, first
+            motion)
+          away: Nobody is home
+          other: None of these fit
+
+      - name: Everyone in bed
+        type: noul
+        brief: *household_rules
+        instructions: >-
+          Using `household_rules`, is everyone who counts and is home in bed for
+          the night?
+        high: Everyone who counts and is home is in bed
+        low: Someone who counts is still up, or nobody is home
+        cutoff: 0.6
+
+      - name: House empty
+        type: noul
+        instructions: Is the house empty, with nobody home?
+        cutoff: 0.5
+
+# An automation that runs once per decision, rather than on each sensor change:
+#
+# automation:
+#   - alias: Night mode when the house goes to sleep
+#     triggers:
+#       - trigger: event
+#         event_type: mentat_decision
+#         event_data:
+#           watch: house_mode
+#     conditions:
+#       - >-
+#         {{ trigger.event.data.answers.house_mode_house_mode.choice == 'asleep'
+#            and trigger.event.data.answers.house_mode_house_mode.confidence > 0.7 }}
+#     actions:
+#       - action: scene.turn_on
+#         target:
+#           entity_id: scene.night

@@ -1,0 +1,19 @@
+# Last release built on Home Assistant 2026.9.x; 0.13.368 moves to 2026.10.
+pytest-homeassistant-custom-component==0.13.367
+
+# Matches the pin in manifest.json.
+jevclient==1.3.1
+
+# Pillow resizes and re-encodes pictures. Version from HA 2026.9.4 package_constraints.txt.
+Pillow==12.3.0
+# The camera component imports PyTurboJPEG at load time. Version from its manifest.
+PyTurboJPEG==1.8.3
+
+# ai_task imports conversation, which needs these three. HA installs them for a user;
+# a test venv does not. Versions from conversation/manifest.json in HA 2026.9.4.
+gazetteer-matcher==1.1.0
+hassil==3.12.1
+home-assistant-intents==2026.8.28
+
+ruff==0.17.3
+mypy==2.4.1

@@ -1,0 +1,926 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pick a provider and key",
+        "description": "Pick the provider that answers and paste its API key. Mentat sends one probe question before it saves the entry, so a wrong key, address or dialect fails here instead of in a sensor.",
+        "data": {
+          "provider": "Provider",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "provider": "TypeSafe, OpenRouter and Cloudflare are hosted. A local Clef server or a System One server is one you run yourself and name under Advanced.",
+          "api_key": "Sent as a bearer token with every request. Leave it empty only for a server of your own that needs no key. For Cloudflare, this is an API token with Workers AI access."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "url": "Server address",
+              "model": "Model",
+              "dialect": "Dialect",
+              "image_format": "Image encoding",
+              "truncate": "Let the server truncate a long state"
+            },
+            "data_description": {
+              "url": "Leave it empty to use the provider's own address. A local or System One server needs one. Cloudflare ignores it. The key travels in clear over a plain http address.",
+              "model": "Leave it empty for the provider's default. Cloudflare takes clef-flash or clef.",
+              "dialect": "System One server only. TypeSafe is the published API; Clef is the Cloudflare and clef_mlx format.",
+              "image_format": "System One server with the Clef dialect only. The TypeSafe dialect always sends named assets.",
+              "truncate": "Local Clef server only. Off sends the whole state, which is what the answer should be about."
+            }
+          }
+        }
+      },
+      "account_id": {
+        "title": "Cloudflare account",
+        "description": "Workers AI runs under an account. Paste the account id shown on the Cloudflare dashboard overview.",
+        "data": {
+          "account_id": "Account id"
+        },
+        "data_description": {
+          "account_id": "32 hexadecimal characters."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Replace the API key",
+        "description": "The server refused the key saved for {title}. Paste one that works. This step keeps the address, and Reconfigure changes it.",
+        "data": {
+          "api_key": "API key"
+        },
+        "data_description": {
+          "api_key": "Mentat probes the saved address with it before the old key is replaced."
+        }
+      },
+      "reconfigure": {
+        "title": "Point this entry somewhere else",
+        "description": "The entry keeps its questions and entities. Mentat probes whatever you change here before saving it.",
+        "data": {
+          "provider": "Provider",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "provider": "TypeSafe, OpenRouter and Cloudflare are hosted. A local Clef server or a System One server is one you run yourself and name under Advanced.",
+          "api_key": "Empty keeps the saved key, as long as the provider and address stay as they are. Change either and the saved key is dropped, so it never travels to a server it was not issued for."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "url": "Server address",
+              "model": "Model",
+              "dialect": "Dialect",
+              "image_format": "Image encoding",
+              "truncate": "Let the server truncate a long state"
+            },
+            "data_description": {
+              "url": "Leave it empty to use the provider's own address. A local or System One server needs one. Cloudflare ignores it. The key travels in clear over a plain http address.",
+              "model": "Leave it empty for the provider's default. Cloudflare takes clef-flash or clef.",
+              "dialect": "System One server only. TypeSafe is the published API; Clef is the Cloudflare and clef_mlx format.",
+              "image_format": "System One server with the Clef dialect only. The TypeSafe dialect always sends named assets.",
+              "truncate": "Local Clef server only. Off sends the whole state, which is what the answer should be about."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "That key was refused. Check that it was copied whole and belongs to this provider.",
+      "model_refused": "The server has no model by that name. An empty field asks for the provider's default.",
+      "cannot_connect": "Nothing answered at that address. Check the host and port, and that the server is running.",
+      "out_of_credit": "The provider says this account has run out of credit. Top it up, then submit again. Reply: {reply}",
+      "server_error": "The probe got an error back: {reply}",
+      "key_missing": "This provider refuses requests without a key. Only a server you run yourself can go without one.",
+      "account_id_required": "Cloudflare needs the account id that Workers AI runs under.",
+      "invalid_account_id": "A Cloudflare account id is 32 hexadecimal characters.",
+      "address_missing": "There is no built-in address for this provider, so enter one under Advanced.",
+      "address_unusable": "Use an http or https address with a host and nothing more: no spaces, query, fragment, user name or password.",
+      "wrong_dialect": "The server answered, but not in the format this dialect expects, or it has nothing at that path. Check the dialect and the address under Advanced."
+    },
+    "abort": {
+      "already_configured": "This key is already set up for this server.",
+      "reauth_successful": "Key replaced. The next request uses it.",
+      "reconfigure_successful": "Saved, and the entry reloaded."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Budget and pictures",
+        "description": "Input tokens are what you pay for, and question text counts as input. Set the budget past anything a working setup uses, so only a runaway reaches it.",
+        "data": {
+          "token_budget": "Input tokens allowed per day",
+          "token_price": "Dollars per million input tokens",
+          "max_images": "Pictures per request"
+        },
+        "data_description": {
+          "token_budget": "The count starts again at local midnight. Set 0 to turn the limit off.",
+          "token_price": "Only the spend sensor uses it. Nothing that is sent depends on it.",
+          "max_images": "At most 4. Each picture is billed by its pixels."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "key_refused": {
+      "message": "{provider} did not accept the API key: {reason}"
+    },
+    "setup_failed": {
+      "message": "{provider} did not answer the setup question: {reason}"
+    },
+    "ask_failed": {
+      "message": "{provider} did not answer: {reason}"
+    },
+    "rate_limited": {
+      "message": "{provider} asked Mentat to slow down: {reason}"
+    },
+    "note_failed": {
+      "message": "Watch {watch} could not render its note: {reason}"
+    },
+    "watch_target_failed": {
+      "message": "Watch {watch}: {reason}"
+    },
+    "watch_over_budget": {
+      "message": "Watch {watch} was skipped. Its estimate is {estimate} tokens and only {remaining} of today's {budget} remain. Raise the budget in the options, or wait for midnight."
+    },
+    "request_over_budget": {
+      "message": "Not sent. The estimate is {estimate} tokens and only {remaining} of today's {budget} remain. Raise the budget in the options, or wait for midnight."
+    },
+    "target_missing": {
+      "message": "Nothing by these names exists: {targets}. Mentat refuses the whole request, because judging only what is left would change the question."
+    },
+    "empty_target": {
+      "message": "None of the picked entities has a state right now, so there is no reading to send."
+    },
+    "target_too_large": {
+      "message": "The target expands to {count} entities and one request may carry {limit}. Each one is billed on every request, so narrow the target to what the question needs, or split it."
+    },
+    "no_entry": {
+      "message": "No loaded Mentat entry matches. Add the integration, or pick a loaded entry under Config entry."
+    },
+    "entry_ambiguous": {
+      "message": "Mentat cannot choose between {entries}, and each has its own key and budget. Name one under Config entry."
+    },
+    "nothing_to_read": {
+      "message": "The action has nothing to send. Give it a note, a target or a picture."
+    },
+    "template_failed": {
+      "message": "Template error in the note: {reason}"
+    },
+    "answer_mismatch": {
+      "message": "The server answered a {question_type} question with a {got}."
+    },
+    "options_count": {
+      "message": "This choice lists {count} options. A choice needs at least {min} and at most {max}."
+    },
+    "scale_count": {
+      "message": "This scale lists {count} levels. A score needs at least {min} and at most {max}, lowest first."
+    },
+    "question_shape": {
+      "message": "Question {key} is missing its type or its instructions. The type is one of noul, choice, score or box."
+    },
+    "question_invalid": {
+      "message": "Mentat cannot send question {key}: {reason}"
+    },
+    "box_needs_image": {
+      "message": "Question {key} is a box, and a box needs a picture under pictures."
+    },
+    "box_refused": {
+      "message": "{model} refused a box question: {reason}. The Clef dialect has no box question; on TypeSafe a box needs Jev 1.14 or later."
+    },
+    "not_an_image_source": {
+      "message": "{source} is not a picture source. Give a camera or image entity, or the full path of an image file starting with /."
+    },
+    "path_not_allowed": {
+      "message": "Home Assistant may not read {path}. Add its folder to allowlist_external_dirs, or use a file under /media."
+    },
+    "image_unavailable": {
+      "message": "{entity_id} gave no picture: {reason}"
+    },
+    "image_unreadable": {
+      "message": "{source} could not be read as a picture: {reason}"
+    },
+    "image_too_large": {
+      "message": "{source} is too large to send, at {size}; the limit is {limit}."
+    },
+    "path_needs_admin": {
+      "message": "Only an administrator may send a picture from a file path such as {path}. Use a camera or image entity instead."
+    },
+    "entity_not_permitted": {
+      "message": "You do not have permission to read {entity_id}, so it cannot be sent."
+    },
+    "too_many_images": {
+      "message": "{count} pictures were given and this entry sends at most {limit} per request. Each picture is billed by its pixels; the limit is in the integration options."
+    },
+    "task_needs_structure": {
+      "message": "Task {task} has no structure. A decision model answers yes or no, picks an option or rates on a scale, and writes no prose, so give the task a structure with boolean, select or number fields."
+    },
+    "task_over_budget": {
+      "message": "Task {task} was not sent. Its estimate is {estimate} tokens and only {remaining} of today's {budget} remain. Raise the budget in the options, or wait for midnight."
+    },
+    "attachment_not_image": {
+      "message": "{attachment} is {mime_type}, and only pictures can be attached."
+    },
+    "reserved_field": {
+      "message": "A field may not be called {field}: the result carries each answer's probability under that name."
+    },
+    "no_fields": {
+      "message": "The structure has no fields, so there is nothing to ask."
+    },
+    "unsupported_field": {
+      "message": "Field {field} uses a {selector}, which a decision model cannot fill: it returns no prose. Use a boolean, select or number selector."
+    },
+    "field_options_out_of_range": {
+      "message": "Field {field} offers {count} options. A decision model chooses among {min} to {max}."
+    },
+    "field_needs_scale": {
+      "message": "Field {field} is a number with no {bound}. A number is answered on a scale, so give it both min and max."
+    },
+    "field_scale_not_ordered": {
+      "message": "Field {field} runs from {min} to {max}; max has to be above min."
+    },
+    "field_step_too_coarse": {
+      "message": "Field {field} runs from {min} to {max} in steps of {step}, so its levels would repeat. Give it a step smaller than the range, or none."
+    },
+    "answer_missing": {
+      "message": "The reply has nothing for field {field}."
+    },
+    "answer_does_not_fit": {
+      "message": "Field {field} uses a {selector} and the model answered with a {answer}."
+    },
+    "window_without_target": {
+      "message": "A window logs changes to entities, so asking about one needs entities, devices, areas or labels picked as the target."
+    }
+  },
+  "issues": {
+    "over_budget": {
+      "title": "Daily token budget spent",
+      "description": "This entry has used {used} input tokens today against a budget of {budget}. No more questions are sent until midnight. Raise the budget in the integration options to resume now."
+    }
+  },
+  "selector": {
+    "provider": {
+      "options": {
+        "typesafe": "TypeSafe Jev",
+        "openrouter": "OpenRouter",
+        "cloudflare": "Cloudflare Workers AI",
+        "local_clef": "Local Clef server",
+        "generic": "System One server"
+      }
+    },
+    "dialect": {
+      "options": {
+        "typesafe": "TypeSafe",
+        "clef": "Clef"
+      }
+    },
+    "image_format": {
+      "options": {
+        "assets": "Named assets",
+        "data_url": "Data URLs",
+        "base64": "Base64 objects"
+      }
+    },
+    "window_evaluate": {
+      "options": {
+        "on_event": "After events",
+        "interval": "On the schedule",
+        "both": "Both"
+      }
+    }
+  },
+  "system_health": {
+    "info": {
+      "loaded_entries": "Loaded entries",
+      "provider": "Provider",
+      "dialect": "Dialect",
+      "reachable": "Server reachable"
+    }
+  },
+  "config_subentries": {
+    "question": {
+      "entry_type": "Question",
+      "initiate_flow": {
+        "user": "Ask something new",
+        "reconfigure": "Revise question"
+      },
+      "step": {
+        "user": {
+          "title": "Pick the answer type",
+          "menu_options": {
+            "noul": "Yes or no, as a probability from 0 to 1",
+            "choice": "One of your options, with every option's probability",
+            "score": "A number on a scale of levels you write"
+          }
+        },
+        "noul": {
+          "title": "Noul: how likely is yes",
+          "data": {
+            "name": "Name",
+            "instructions": "What to ask",
+            "target": "Entities to read",
+            "note": "Note",
+            "brief": "Brief",
+            "high": "High means",
+            "low": "Low means",
+            "cutoff": "Cutoff for a verdict sensor"
+          },
+          "data_description": {
+            "name": "The sensor this question makes takes this name.",
+            "instructions": "Sent to the model as its instructions. Word it so that yes is the answer you are watching for.",
+            "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
+            "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
+            "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
+            "high": "Optional. The situation a probability near 1 stands for.",
+            "low": "Optional. The situation a probability near 0 stands for.",
+            "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Schedule and extras",
+              "description": "With the defaults, the question is asked every 5 minutes and one second after a picked entity changes. Attributes stay off.",
+              "data": {
+                "wake_on": "Wake on",
+                "scan_interval": "Schedule",
+                "with_attributes": "With attributes"
+              },
+              "data_description": {
+                "wake_on": "Evaluate when these change rather than when the picked entities do, a second after they change.",
+                "scan_interval": "Seconds, 1 at the least. Questions that read the same thing on the same schedule share one request.",
+                "with_attributes": "Adds every attribute after redaction. One weather entity's forecast can add thousands of tokens to each request."
+              }
+            },
+            "window": {
+              "name": "Window of events",
+              "description": "Judge what happened over a stretch of time, not only how things are now. Questions with the same window share one request.",
+              "data": {
+                "window_enabled": "Judge a window of events",
+                "window_duration": "Window length",
+                "window_max_events": "Events kept",
+                "window_settle": "Quiet before judging",
+                "window_evaluate": "Judge the window",
+                "window_events": "Bus events to log",
+                "window_collapse_repeats": "Skip repeated states"
+              },
+              "data_description": {
+                "window_enabled": "Needs something under Entities to read. Sends their changes over the window next to the readings, each with how long it held its state.",
+                "window_duration": "From 1 minute to 24 hours.",
+                "window_max_events": "From 10 to 500. The oldest are dropped first.",
+                "window_settle": "Seconds of quiet after the last change before the window is judged, so changes that come together are judged together. Every change restarts the wait, up to three times this long after the first. From 0 to 300, and no longer than the window.",
+                "window_evaluate": "After events, on the schedule, or both. On the schedule uses the interval under Schedule and extras.",
+                "window_events": "A list of `event_type`, optional `data` to match and optional `label`.",
+                "window_collapse_repeats": "Leave out a change that repeats the state already logged."
+              }
+            }
+          }
+        },
+        "choice": {
+          "title": "Choice from a list you write",
+          "data": {
+            "name": "Name",
+            "instructions": "What to ask",
+            "target": "Entities to read",
+            "note": "Note",
+            "brief": "Brief",
+            "options": "Options"
+          },
+          "data_description": {
+            "name": "The sensor this question makes takes this name.",
+            "instructions": "Sent to the model as its instructions. Say what the options are a choice of.",
+            "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
+            "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
+            "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
+            "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Schedule and extras",
+              "description": "With the defaults, the question is asked every 5 minutes and one second after a picked entity changes. Attributes stay off.",
+              "data": {
+                "wake_on": "Wake on",
+                "scan_interval": "Schedule",
+                "with_attributes": "With attributes"
+              },
+              "data_description": {
+                "wake_on": "Evaluate when these change rather than when the picked entities do, a second after they change.",
+                "scan_interval": "Seconds, 1 at the least. Questions that read the same thing on the same schedule share one request.",
+                "with_attributes": "Adds every attribute after redaction. One weather entity's forecast can add thousands of tokens to each request."
+              }
+            },
+            "window": {
+              "name": "Window of events",
+              "description": "Judge what happened over a stretch of time, not only how things are now. Questions with the same window share one request.",
+              "data": {
+                "window_enabled": "Judge a window of events",
+                "window_duration": "Window length",
+                "window_max_events": "Events kept",
+                "window_settle": "Quiet before judging",
+                "window_evaluate": "Judge the window",
+                "window_events": "Bus events to log",
+                "window_collapse_repeats": "Skip repeated states"
+              },
+              "data_description": {
+                "window_enabled": "Needs something under Entities to read. Sends their changes over the window next to the readings, each with how long it held its state.",
+                "window_duration": "From 1 minute to 24 hours.",
+                "window_max_events": "From 10 to 500. The oldest are dropped first.",
+                "window_settle": "Seconds of quiet after the last change before the window is judged, so changes that come together are judged together. Every change restarts the wait, up to three times this long after the first. From 0 to 300, and no longer than the window.",
+                "window_evaluate": "After events, on the schedule, or both. On the schedule uses the interval under Schedule and extras.",
+                "window_events": "A list of `event_type`, optional `data` to match and optional `label`.",
+                "window_collapse_repeats": "Leave out a change that repeats the state already logged."
+              }
+            }
+          }
+        },
+        "score": {
+          "title": "Score: a place on your scale",
+          "data": {
+            "name": "Name",
+            "instructions": "What to ask",
+            "target": "Entities to read",
+            "note": "Note",
+            "brief": "Brief",
+            "scale": "Scale"
+          },
+          "data_description": {
+            "name": "The sensor this question makes takes this name.",
+            "instructions": "Sent to the model as its instructions. Ask about one thing per question.",
+            "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
+            "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
+            "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
+            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Schedule and extras",
+              "description": "With the defaults, the question is asked every 5 minutes and one second after a picked entity changes. Attributes stay off.",
+              "data": {
+                "wake_on": "Wake on",
+                "scan_interval": "Schedule",
+                "with_attributes": "With attributes"
+              },
+              "data_description": {
+                "wake_on": "Evaluate when these change rather than when the picked entities do, a second after they change.",
+                "scan_interval": "Seconds, 1 at the least. Questions that read the same thing on the same schedule share one request.",
+                "with_attributes": "Adds every attribute after redaction. One weather entity's forecast can add thousands of tokens to each request."
+              }
+            },
+            "window": {
+              "name": "Window of events",
+              "description": "Judge what happened over a stretch of time, not only how things are now. Questions with the same window share one request.",
+              "data": {
+                "window_enabled": "Judge a window of events",
+                "window_duration": "Window length",
+                "window_max_events": "Events kept",
+                "window_settle": "Quiet before judging",
+                "window_evaluate": "Judge the window",
+                "window_events": "Bus events to log",
+                "window_collapse_repeats": "Skip repeated states"
+              },
+              "data_description": {
+                "window_enabled": "Needs something under Entities to read. Sends their changes over the window next to the readings, each with how long it held its state.",
+                "window_duration": "From 1 minute to 24 hours.",
+                "window_max_events": "From 10 to 500. The oldest are dropped first.",
+                "window_settle": "Seconds of quiet after the last change before the window is judged, so changes that come together are judged together. Every change restarts the wait, up to three times this long after the first. From 0 to 300, and no longer than the window.",
+                "window_evaluate": "After events, on the schedule, or both. On the schedule uses the interval under Schedule and extras.",
+                "window_events": "A list of `event_type`, optional `data` to match and optional `label`.",
+                "window_collapse_repeats": "Leave out a change that repeats the state already logged."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Change this question",
+          "data": {
+            "name": "Name",
+            "instructions": "What to ask",
+            "target": "Entities to read",
+            "note": "Note",
+            "brief": "Brief",
+            "high": "High means",
+            "low": "Low means",
+            "cutoff": "Cutoff for a verdict sensor",
+            "options": "Options",
+            "scale": "Scale"
+          },
+          "data_description": {
+            "name": "The sensor this question makes takes this name.",
+            "instructions": "The model receives this as its instructions.",
+            "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
+            "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
+            "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
+            "high": "Optional. The situation a probability near 1 stands for.",
+            "low": "Optional. The situation a probability near 0 stands for.",
+            "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it.",
+            "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options.",
+            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Schedule and extras",
+              "description": "With the defaults, the question is asked every 5 minutes and one second after a picked entity changes. Attributes stay off.",
+              "data": {
+                "wake_on": "Wake on",
+                "scan_interval": "Schedule",
+                "with_attributes": "With attributes"
+              },
+              "data_description": {
+                "wake_on": "Evaluate when these change rather than when the picked entities do, a second after they change.",
+                "scan_interval": "Seconds, 1 at the least. Questions that read the same thing on the same schedule share one request.",
+                "with_attributes": "Adds every attribute after redaction. One weather entity's forecast can add thousands of tokens to each request."
+              }
+            },
+            "window": {
+              "name": "Window of events",
+              "description": "Judge what happened over a stretch of time, not only how things are now. Questions with the same window share one request.",
+              "data": {
+                "window_enabled": "Judge a window of events",
+                "window_duration": "Window length",
+                "window_max_events": "Events kept",
+                "window_settle": "Quiet before judging",
+                "window_evaluate": "Judge the window",
+                "window_events": "Bus events to log",
+                "window_collapse_repeats": "Skip repeated states"
+              },
+              "data_description": {
+                "window_enabled": "Needs something under Entities to read. Sends their changes over the window next to the readings, each with how long it held its state.",
+                "window_duration": "From 1 minute to 24 hours.",
+                "window_max_events": "From 10 to 500. The oldest are dropped first.",
+                "window_settle": "Seconds of quiet after the last change before the window is judged, so changes that come together are judged together. Every change restarts the wait, up to three times this long after the first. From 0 to 300, and no longer than the window.",
+                "window_evaluate": "After events, on the schedule, or both. On the schedule uses the interval under Schedule and extras.",
+                "window_events": "A list of `event_type`, optional `data` to match and optional `label`.",
+                "window_collapse_repeats": "Leave out a change that repeats the state already logged."
+              }
+            }
+          }
+        },
+        "preview": {
+          "title": "Trial run",
+          "description": "Mentat built the state below from the readings as they stand now.\n\n{grouping}\n\n### Answer right now\n\n{answer}\n\n### State sent\n\n```\n{state}\n```"
+        }
+      },
+      "error": {
+        "nothing_to_read": "Pick entities or write a note. The model needs something to read.",
+        "option_unnamed": "A line starts with a colon. Put the option's name in front of it.",
+        "option_repeated": "The same option name appears on two lines. Give each line its own name.",
+        "options_count": "Write 2 to 255 options, one per line.",
+        "scale_count": "Write 2 to 10 levels, one per line, lowest first.",
+        "window_without_target": "A window logs changes to entities, so pick something under Entities to read.",
+        "window_duration_out_of_range": "A window lasts from 1 minute to 24 hours.",
+        "window_settle_too_long": "The quiet before judging cannot be longer than the window.",
+        "window_events_invalid": "Bus events are a list of items, each with an event_type and optionally data and label.",
+        "window_event_is_own": "A window cannot log Mentat's own events such as mentat_decision. Each answer fires one, so the question would ask again after every answer."
+      },
+      "abort": {
+        "reconfigure_successful": "Saved."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "noul": {
+        "state_attributes": {
+          "question_type": {
+            "name": "Answer type"
+          },
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "event_count": {
+            "name": "Events in window"
+          },
+          "last_evaluated": {
+            "name": "Last evaluated"
+          }
+        }
+      },
+      "choice": {
+        "state_attributes": {
+          "question_type": {
+            "name": "Answer type"
+          },
+          "confidence": {
+            "name": "Confidence"
+          },
+          "probabilities": {
+            "name": "Probability per option"
+          },
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "event_count": {
+            "name": "Events in window"
+          },
+          "last_evaluated": {
+            "name": "Last evaluated"
+          }
+        }
+      },
+      "score": {
+        "state_attributes": {
+          "question_type": {
+            "name": "Answer type"
+          },
+          "confidence": {
+            "name": "Confidence"
+          },
+          "probabilities": {
+            "name": "Probability per level"
+          },
+          "legend": {
+            "name": "Scale"
+          },
+          "nearest_level": {
+            "name": "Nearest level"
+          },
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "event_count": {
+            "name": "Events in window"
+          },
+          "last_evaluated": {
+            "name": "Last evaluated"
+          }
+        }
+      },
+      "watch_latency": {
+        "name": "{watch} latency"
+      },
+      "watch_bytes": {
+        "name": "{watch} bytes",
+        "state_attributes": {
+          "sent_state": {
+            "name": "Sent state"
+          },
+          "questions": {
+            "name": "Questions"
+          }
+        }
+      },
+      "requests_today": {
+        "name": "Requests today"
+      },
+      "tokens_today": {
+        "name": "Tokens today",
+        "state_attributes": {
+          "token_budget": {
+            "name": "Daily token budget"
+          }
+        }
+      },
+      "spend_today": {
+        "name": "Spend today",
+        "state_attributes": {
+          "token_price": {
+            "name": "Dollars per million input tokens"
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "verdict": {
+        "state_attributes": {
+          "probability": {
+            "name": "Probability"
+          },
+          "cutoff": {
+            "name": "Cutoff"
+          },
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "event_count": {
+            "name": "Events in window"
+          },
+          "last_evaluated": {
+            "name": "Last evaluated"
+          }
+        }
+      },
+      "over_budget": {
+        "name": "Over budget",
+        "state_attributes": {
+          "token_budget": {
+            "name": "Daily token budget"
+          },
+          "tokens_today": {
+            "name": "Tokens billed today"
+          }
+        }
+      }
+    }
+  },
+  "common": {
+    "trial_alone": "Sent as a request of its own.",
+    "trial_grouped": "Shares a request with {others}.",
+    "trial_cost": "This trial cost {tokens} tokens, about {cost} USD, and took {ms} ms.",
+    "trial_cutoff_over": "With a cutoff of {cutoff}, the verdict sensor would read on.",
+    "trial_cutoff_under": "With a cutoff of {cutoff}, the verdict sensor would read off.",
+    "trial_winner": "The model leans to **{choice}**. Confidence in this answer: {confidence}.",
+    "trial_score": "The answer lands at **{score}**, nearest to **{level}**. Confidence in this answer: {confidence}.",
+    "trial_undrawable": "This version of Mentat cannot show an answer of that shape.",
+    "trial_failed": "Trial request failed: {reason}",
+    "trial_mismatched": "The reply does not match the question that was sent.",
+    "trial_template_error": "The note's template has an error: {reason}",
+    "trial_over_budget": "Today's budget cannot cover a trial, so none was sent. Saving still works.",
+    "trial_nothing_yet": "No trial yet. Pick entities or write a note first.",
+    "trial_window": "The window covers the last {minutes} minutes. The recorder has {events} changes in it so far; bus events are logged from the moment the question is saved.",
+    "trial_window_no_recorder": "The window covers the last {minutes} minutes. The recorder is not loaded, so it starts empty and fills as things change."
+  },
+  "services": {
+    "noul": {
+      "name": "Ask how likely something is",
+      "description": "Ask whether something is true, and get the probability of yes from 0 to 1.",
+      "fields": {
+        "note": {
+          "name": "Note",
+          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+        },
+        "pictures": {
+          "name": "Pictures",
+          "description": "Camera or image entities, or full paths of image files under /media or a folder listed in allowlist_external_dirs. Each picture is billed by its pixels after resizing."
+        },
+        "instructions": {
+          "name": "Question",
+          "description": "Word it so the probability rises toward 1 as the answer moves toward yes. A statement works as well as a question."
+        },
+        "brief": {
+          "name": "Brief",
+          "description": "Optional. Standing facts about how to read this, such as what a reading means for one device. Sent with the question rather than the readings. An object keeps your own key names, which the model reads."
+        },
+        "high": {
+          "name": "Yes means",
+          "description": "Optional. The situation a probability near 1 stands for."
+        },
+        "low": {
+          "name": "No means",
+          "description": "Optional. The situation a probability near 0 stands for."
+        },
+        "cutoff": {
+          "name": "Cutoff",
+          "description": "The response's verdict is true once the probability reaches this. The probability comes back too. Near 0.5 the model is unsure, which is different from half true."
+        },
+        "with_attributes": {
+          "name": "With attributes",
+          "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
+        },
+        "config_entry": {
+          "name": "Config entry",
+          "description": "Which Mentat entry to ask with. Needed only when more than one is loaded."
+        },
+        "model": {
+          "name": "Model",
+          "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    },
+    "choice": {
+      "name": "Choose among options",
+      "description": "Returns the most likely of your options, the probability of each and a confidence.",
+      "fields": {
+        "note": {
+          "name": "Note",
+          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+        },
+        "pictures": {
+          "name": "Pictures",
+          "description": "Camera or image entities, or full paths of image files under /media or a folder listed in allowlist_external_dirs. Each picture is billed by its pixels after resizing."
+        },
+        "instructions": {
+          "name": "Question",
+          "description": "Say in one sentence what the choice decides."
+        },
+        "brief": {
+          "name": "Brief",
+          "description": "Optional. Standing facts about how to read this, such as what a reading means for one device. Sent with the question rather than the readings. An object keeps your own key names, which the model reads."
+        },
+        "options": {
+          "name": "Options",
+          "description": "A list of names, or a mapping of each name to what it means. 2 to 255 options. Include a catch-all such as other when the list may not cover every case."
+        },
+        "with_attributes": {
+          "name": "With attributes",
+          "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
+        },
+        "config_entry": {
+          "name": "Config entry",
+          "description": "Which Mentat entry to ask with. Needed only when more than one is loaded."
+        },
+        "model": {
+          "name": "Model",
+          "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    },
+    "score": {
+      "name": "Find a point on your scale",
+      "description": "Returns a number on the levels you write. It can fall between two of them, and the nearest level comes back with it.",
+      "fields": {
+        "note": {
+          "name": "Note",
+          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+        },
+        "pictures": {
+          "name": "Pictures",
+          "description": "Camera or image entities, or full paths of image files under /media or a folder listed in allowlist_external_dirs. Each picture is billed by its pixels after resizing."
+        },
+        "instructions": {
+          "name": "Question",
+          "description": "One dimension per question."
+        },
+        "brief": {
+          "name": "Brief",
+          "description": "Optional. Standing facts about how to read this, such as what a reading means for one device. Sent with the question rather than the readings. An object keeps your own key names, which the model reads."
+        },
+        "scale": {
+          "name": "Scale",
+          "description": "2 to 10 levels, lowest first. Describe a situation for each rather than a degree."
+        },
+        "with_attributes": {
+          "name": "With attributes",
+          "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
+        },
+        "config_entry": {
+          "name": "Config entry",
+          "description": "Which Mentat entry to ask with. Needed only when more than one is loaded."
+        },
+        "model": {
+          "name": "Model",
+          "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    },
+    "ask": {
+      "name": "Ask a batch in one request",
+      "description": "Ask any mix of questions about one state in a single request. Each is judged on its own against the same state.",
+      "fields": {
+        "note": {
+          "name": "Note",
+          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+        },
+        "pictures": {
+          "name": "Pictures",
+          "description": "Camera or image entities, or full paths of image files under /media or a folder listed in allowlist_external_dirs. Each picture is billed by its pixels after resizing."
+        },
+        "questions": {
+          "name": "Questions",
+          "description": "Your own key per question, then its type (noul, choice, score or box), its instructions, and criteria for choice and score. The keys come back as the keys of the answers."
+        },
+        "window": {
+          "name": "Window",
+          "description": "Optional. Judge the last stretch of time as well as the present: the changes of the picked entities over duration, read from the recorder, with max_events, events and collapse_repeats as in a window watch. Needs entities picked."
+        },
+        "with_attributes": {
+          "name": "With attributes",
+          "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
+        },
+        "config_entry": {
+          "name": "Config entry",
+          "description": "Which Mentat entry to ask with. Needed only when more than one is loaded."
+        },
+        "model": {
+          "name": "Model",
+          "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    },
+    "box": {
+      "name": "Locate something in a picture",
+      "description": "Find something in one picture, and get its left, top, right and bottom edges as fractions of the picture from its top left corner, with a confidence.",
+      "fields": {
+        "picture": {
+          "name": "Picture",
+          "description": "A camera or image entity, or the full path of an image file Home Assistant may read. TypeSafe only: the Clef dialect has no box question."
+        },
+        "instructions": {
+          "name": "Look for",
+          "description": "Name the thing to locate. The model returns a box even when the thing is absent, so check the confidence before acting on it."
+        },
+        "brief": {
+          "name": "Brief",
+          "description": "Optional. Standing facts about how to read this, such as what a reading means for one device. Sent with the question rather than the readings. An object keeps your own key names, which the model reads."
+        },
+        "config_entry": {
+          "name": "Config entry",
+          "description": "Which Mentat entry to ask with. Needed only when more than one is loaded."
+        },
+        "model": {
+          "name": "Model",
+          "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    }
+  }
+}

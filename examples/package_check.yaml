@@ -1,0 +1,136 @@
+# Porch package check: did a delivery arrive?
+#
+# A porch camera job saves two frames about 30 seconds apart and fires
+# `porch_frames_saved` with their paths in `images`. Each automation below sends
+# those frames with a reference photo taken when the porch was clear. Use one of
+# them. The first asks two questions and reads their probabilities. The second
+# asks the AI Task entity and gets a plain true or false.
+#
+# Home Assistant must be allowed to read the paths, so keep the files under
+# /media or in a folder listed in allowlist_external_dirs. Mentat resizes each
+# picture and bills it by its pixels. Three pictures fit the default limit of
+# four per request.
+#
+# Paste these into automations.yaml, or under `automation:` in a package.
+
+# The first way: mentat.ask.
+- id: porch_package_check_mentat
+  alias: Porch package check
+  mode: queued
+  triggers:
+    - trigger: event
+      event_type: porch_frames_saved
+  actions:
+    - action: mentat.ask
+      data:
+        note: >-
+          Front porch package check. Image 1 is a reference photo of this porch
+          when it was known to be clear of deliveries. Images 2 and 3 show the
+          porch now, about 30 seconds apart. Lighting may differ between the
+          reference and the current images (a floodlight is used at night);
+          ignore brightness, colour, shadows, wet patches, leaves and snow.
+        pictures:
+          - /media/porch/baseline_day.jpg
+          - "{{ trigger.event.data.images[0] }}"
+          - "{{ trigger.event.data.images[1] }}"
+        questions:
+          package_left:
+            type: noul
+            instructions: >-
+              In the current photos, is a delivered package sitting on the porch
+              that is not in the reference photo?
+            high: >-
+              A parcel, box, padded mailer, envelope or bagged delivery has been
+              left on the porch and is absent from the reference photo
+            low: >-
+              No new delivery on the porch. These are never packages: the doormat,
+              planters and plants, garden hose, bags of soil or landscaping
+              material, outdoor furniture, boots and shoes, brooms, tools, toys,
+              pet items, bins, decorations, and anything a person is holding or
+              carrying
+          what_changed:
+            type: choice
+            instructions: >-
+              Compared with the reference photo, what is the main physical change
+              on the porch now?
+            criteria:
+              package: >-
+                A delivered parcel, box, mailer, envelope or bagged delivery left
+                on the porch
+              person: >-
+                A person is in the frame (anything they hold or carry is not a
+                package)
+              other_object: >-
+                Some other object moved or added: the doormat, planters, hose,
+                furniture, shoes, tools, toys, bins or decorations
+              nothing: "No physical change; only lighting, shadows or weather"
+      response_variable: verdict
+    - if:
+        - >-
+          {{ verdict.answers.package_left.noul >= 0.6
+             and verdict.answers.what_changed.choice == 'package' }}
+      then:
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.package_detected
+        - action: notify.notify
+          data:
+            message: >-
+              A package is on the porch
+              ({{ (verdict.answers.package_left.noul * 100) | round }}% sure).
+
+# The second way: ai_task.generate_data.
+# A decision model fills boolean, select and number fields and writes no prose,
+# so the structure has no text field. The boolean becomes a yes-or-no question
+# (true at 0.5 and above); the number becomes a rating on its scale, here 0 to 4.
+- id: porch_package_check_ai_task
+  alias: Porch package check (AI Task)
+  mode: queued
+  triggers:
+    - trigger: event
+      event_type: porch_frames_saved
+  actions:
+    - action: ai_task.generate_data
+      data:
+        task_name: Porch package check
+        entity_id: ai_task.mentat
+        instructions: >-
+          The first picture is the porch when it was known to be clear of
+          deliveries; the others show it now, about 30 seconds apart. Ignore
+          lighting, shadows and weather.
+        structure:
+          detected:
+            description: >-
+              Is a delivered package sitting on the porch that is not in the first
+              picture?
+            required: true
+            selector:
+              boolean:
+          confidence:
+            description: >-
+              How clearly do the current pictures show a new package, from 0 (not
+              at all) to 4 (unmistakably)?
+            required: true
+            selector:
+              number:
+                min: 0
+                max: 4
+                step: 1
+        attachments:
+          - media_content_id: media-source://media_source/local/porch/baseline_day.jpg
+            media_content_type: image/jpeg
+          - media_content_id: >-
+              media-source://media_source/local/{{ trigger.event.data.images[0]
+              | replace('/media/', '') }}
+            media_content_type: image/jpeg
+          - media_content_id: >-
+              media-source://media_source/local/{{ trigger.event.data.images[1]
+              | replace('/media/', '') }}
+            media_content_type: image/jpeg
+      response_variable: result
+    - if:
+        - "{{ result.data.detected and result.data.confidence >= 3 }}"
+      then:
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.package_detected

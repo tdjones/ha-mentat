@@ -1,0 +1,255 @@
+noul:
+  target:
+    entity: {}
+  fields:
+    note:
+      required: false
+      example: |
+        Washing machine: {{ states('sensor.washing_machine_power') }} W
+      selector:
+        template:
+    pictures:
+      required: false
+      example:
+        - camera.front_door
+      selector:
+        text:
+          multiple: true
+    instructions:
+      required: true
+      example: Is the laundry finished but still sitting in the machine?
+      selector:
+        text:
+          multiline: true
+    brief:
+      required: false
+      example: The machine draws under 5 W when idle and over 300 W while it runs.
+      selector:
+        text:
+          multiline: true
+    high:
+      required: false
+      example: The programme is done and nobody has emptied it
+      selector:
+        text:
+          multiline: true
+    low:
+      required: false
+      example: Still running, or already emptied
+      selector:
+        text:
+          multiline: true
+    cutoff:
+      required: false
+      default: 0.5
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
+    with_attributes:
+      required: false
+      default: false
+      selector:
+        boolean:
+    config_entry:
+      required: false
+      selector:
+        config_entry:
+          integration: mentat
+    model:
+      required: false
+      example: jev-1.14.0
+      selector:
+        text:
+
+choice:
+  target:
+    entity: {}
+  fields:
+    note:
+      required: false
+      example: "{{ trigger.payload }}"
+      selector:
+        template:
+    pictures:
+      required: false
+      example:
+        - camera.front_door
+      selector:
+        text:
+          multiple: true
+    instructions:
+      required: true
+      example: Who is at the door?
+      selector:
+        text:
+          multiline: true
+    brief:
+      required: false
+      selector:
+        text:
+          multiline: true
+    options:
+      required: true
+      example:
+        delivery: A courier with a parcel
+        visitor: Somebody we know
+        other:
+      selector:
+        object:
+    with_attributes:
+      required: false
+      default: false
+      selector:
+        boolean:
+    config_entry:
+      required: false
+      selector:
+        config_entry:
+          integration: mentat
+    model:
+      required: false
+      example: jev-1.14.0
+      selector:
+        text:
+
+score:
+  target:
+    entity: {}
+  fields:
+    note:
+      required: false
+      example: "{{ trigger.payload }}"
+      selector:
+        template:
+    pictures:
+      required: false
+      example:
+        - camera.front_door
+      selector:
+        text:
+          multiple: true
+    instructions:
+      required: true
+      example: How urgently must someone act on this?
+      selector:
+        text:
+          multiline: true
+    brief:
+      required: false
+      selector:
+        text:
+          multiline: true
+    scale:
+      required: true
+      example:
+        - Nothing to do
+        - Worth a look this week
+        - Needs attention today
+        - Wake someone up now
+      selector:
+        text:
+          multiple: true
+    with_attributes:
+      required: false
+      default: false
+      selector:
+        boolean:
+    config_entry:
+      required: false
+      selector:
+        config_entry:
+          integration: mentat
+    model:
+      required: false
+      example: jev-1.14.0
+      selector:
+        text:
+
+ask:
+  target:
+    entity: {}
+  fields:
+    note:
+      required: false
+      example: "Front door: {{ states('binary_sensor.front_door') }}"
+      selector:
+        template:
+    pictures:
+      required: false
+      example:
+        - camera.front_door
+      selector:
+        text:
+          multiple: true
+    questions:
+      required: true
+      example:
+        warn:
+          type: noul
+          instructions: Should someone be warned about this?
+        urgency:
+          type: score
+          instructions: How urgently must someone act?
+          criteria:
+            - Nothing to do
+            - Needs attention today
+            - Wake someone up now
+      selector:
+        object:
+    window:
+      required: false
+      example:
+        duration: "00:30:00"
+        max_events: 100
+        events:
+          - event_type: doorbell_pressed
+            label: the doorbell rang
+      selector:
+        object:
+    with_attributes:
+      required: false
+      default: false
+      selector:
+        boolean:
+    config_entry:
+      required: false
+      selector:
+        config_entry:
+          integration: mentat
+    model:
+      required: false
+      example: jev-1.14.0
+      selector:
+        text:
+
+box:
+  fields:
+    picture:
+      required: true
+      example: camera.front_door
+      selector:
+        text:
+    instructions:
+      required: true
+      example: the parcel on the doorstep
+      selector:
+        text:
+          multiline: true
+    brief:
+      required: false
+      selector:
+        text:
+          multiline: true
+    config_entry:
+      required: false
+      selector:
+        config_entry:
+          integration: mentat
+    model:
+      required: false
+      example: jev-1.14.0
+      selector:
+        text:

@@ -1,0 +1,66 @@
+{
+  "entity": {
+    "sensor": {
+      "noul": {
+        "default": "mdi:help-circle-outline"
+      },
+      "choice": {
+        "default": "mdi:format-list-checks"
+      },
+      "score": {
+        "default": "mdi:gauge"
+      },
+      "watch_latency": {
+        "default": "mdi:timer-outline"
+      },
+      "watch_bytes": {
+        "default": "mdi:package-variant-closed"
+      },
+      "requests_today": {
+        "default": "mdi:counter"
+      },
+      "tokens_today": {
+        "default": "mdi:text-short"
+      },
+      "spend_today": {
+        "default": "mdi:cash"
+      }
+    },
+    "binary_sensor": {
+      "verdict": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "on": "mdi:check-circle"
+        }
+      },
+      "over_budget": {
+        "default": "mdi:cash-check",
+        "state": {
+          "on": "mdi:cash-remove"
+        }
+      }
+    },
+    "ai_task": {
+      "decision": {
+        "default": "mdi:scale-balance"
+      }
+    }
+  },
+  "services": {
+    "noul": {
+      "service": "mdi:help-circle-outline"
+    },
+    "choice": {
+      "service": "mdi:format-list-checks"
+    },
+    "score": {
+      "service": "mdi:gauge"
+    },
+    "ask": {
+      "service": "mdi:comment-multiple-outline"
+    },
+    "box": {
+      "service": "mdi:selection-search"
+    }
+  }
+}
