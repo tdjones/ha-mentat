@@ -260,8 +260,9 @@ def image_limits(dialect: Dialect) -> ImageLimits:
 def image_tokens(dialect: Dialect, width: int, height: int) -> int:
     """Input tokens one image of this size is billed.
 
-    TypeSafe: two tokens per 28 px patch, an open row in docs/measurements.md until
-    a TypeSafe run fills it. Clef: one token per 32 px patch plus three, capped at
+    TypeSafe: two tokens per 28 px patch, billed within 2 tokens of that
+    for 280 x 280 and 1024 x 768 on jev-1.14.0, 2026-11-01 (docs/measurements.md,
+    pictures). Clef: one token per 32 px patch plus three, capped at
     1024. clef-flash billed exactly that for 280 x 280 and 1024 x 768 on 2026-11-01
     (docs/measurements.md, pictures).
     """

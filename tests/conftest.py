@@ -138,7 +138,7 @@ def fake_client() -> Iterator[MagicMock]:
         side_effect=_probe_or_default,
     )
     client.async_close = AsyncMock()
-    # A body of 1,200 bytes is about 430 tokens at the cold-start ratio, so a
+    # A body of 1,200 bytes is about 545 tokens at the cold-start ratio, so a
     # text call fits a budget of a few thousand and a single camera frame does not.
     client.body_size.return_value = BODY_BYTES
     with (

@@ -11,7 +11,7 @@ integration builds, sends real requests and prints the rows below.
 .venv/bin/python -m scripts.measure --url http://127.0.0.1:8000 \
     --dialect clef --model clef-flash --no-truncate
 MENTAT_API_KEY=... .venv/bin/python -m scripts.measure \
-    --url https://api.typesafe.ai --dialect typesafe --model jev-latest
+    --url https://api.typesafe.ai --dialect typesafe --model jev-1.14.0
 ```
 
 ## Text requests
@@ -31,7 +31,16 @@ ratio, the line the ledger estimates with.
 | Spread between two sends of one body | 0.0% | clef-flash | 2026-11-01 | `BUDGET_ESTIMATE_MARGIN` = 1.2 |
 | Tokens per entity record | 35.5 | clef-flash | 2026-11-01 | `MAX_TARGET_ENTITIES` = 250 |
 | Cold-start estimate for the 20 record body | 1,401 tokens against 871 billed | clef-flash | 2026-11-01 | The cold start errs high |
-| All of the above on TypeSafe | Not measured here | jev-latest | | Run the second command above |
+| Setup probe, billed | 273 tokens | jev-1.14.0 | 2026-11-01 | The `PROBE_*` comment |
+| Fixed part per request, fitted | 211 tokens | jev-1.14.0 | 2026-11-01 | `REQUEST_OVERHEAD_TOKENS` = 80 |
+| Body bytes per billed token, fitted | 2.19 | jev-1.14.0 | 2026-11-01 | `COLD_START_BYTES_PER_TOKEN` = 2.2 |
+| Largest miss of the fit | 5.0 tokens | jev-1.14.0 | 2026-11-01 | `BUDGET_ESTIMATE_MARGIN` = 1.2 |
+| Spread between two sends of one body | 0.0% | jev-1.14.0 | 2026-11-01 | `BUDGET_ESTIMATE_MARGIN` = 1.2 |
+| Tokens per entity record | 63.4 | jev-1.14.0 | 2026-11-01 | `MAX_TARGET_ENTITIES` = 250 |
+| Cold-start estimate for the 20 record body | 1,393 tokens against 1,596 billed | jev-1.14.0 | 2026-11-01 | The estimate at 2.8 came in 13% under, so the ratio moved to 2.2 |
+
+The fixed part depends on the provider, 88 tokens on clef-flash and 211 on
+TypeSafe. Two sends of one body billed the same both times on both.
 
 Receipts from the clef-flash run, served by clef_mlx.py on the same machine with
 `truncate: false`:
@@ -44,12 +53,35 @@ Receipts from the clef-flash run, served by clef_mlx.py on the same machine with
 | 10 records, twice | 1,686 | 518 | 0 |
 | 20 records, twice | 3,043 | 871 | 0 |
 
+Receipts from the TypeSafe run, jev-1.14.0, 2026-11-01. The sends of one body
+billed the same; latency is the time each took.
+
+| Call | Body bytes | Input tokens | Output tokens | Latency ms |
+| --- | --- | --- | --- | --- |
+| probe | 115 | 273 | 20 | 171 |
+| 0 records, run 1 | 250 | 329 | 21 | 73 |
+| 0 records, run 2 | 250 | 329 | 21 | 72 |
+| 5 records, run 1 | 985 | 656 | 21 | 85 |
+| 5 records, run 2 | 985 | 656 | 21 | 75 |
+| 10 records, run 1 | 1,669 | 973 | 21 | 71 |
+| 10 records, run 2 | 1,669 | 973 | 21 | 100 |
+| 20 records, run 1 | 3,026 | 1,596 | 21 | 78 |
+| 20 records, run 2 | 3,026 | 1,596 | 21 | 89 |
+
 The fixed part was 250 before this run. A fixed part set above the true one makes
 the ledger learn too high a ratio, because it credits too few tokens to the body.
 On clef-flash's line, a ratio learned from a 500-token call at 250 puts a
 250-record body at 6,829 tokens against 9,054 billed, 25% short and past the 20%
 margin. At 80 the same case over-estimates, and a body of nothing is estimated at
-96 tokens against 88. So the default moved to 80, a little under the fit.
+96 tokens against 88. So the default moved to 80, a little under the fit. TypeSafe's fixed part is 211,
+so 80 is under it too, and the same reasoning holds: the ledger credits the gap
+to the body, learns a low ratio and errs high.
+
+The cold-start ratio was 2.8. On TypeSafe's line it estimated the 20 record body
+at 1,393 tokens against 1,596 billed, 13% short even after the 1.2 margin. At 2.2
+the same body is estimated at 1,747, 9% over. On clef-flash, which bills 3.90
+bytes per token, 2.2 estimates the 20 record body at 1,756 against 871, high and
+on the safe side.
 
 Body bytes are counted with Home Assistant's `json_bytes`, the compact UTF-8
 encoder both clients post with. That is what `DecisionClient.body_size()` returns.
@@ -64,14 +96,18 @@ difference between the two is the picture's bill.
 | --- | --- | --- | --- | --- |
 | Picture sent at 280 x 280 | 84 tokens, as `image_tokens()` says | clef-flash | 2026-11-01 | Clef's formula |
 | Picture sent at 1024 x 768 | 771 tokens, as `image_tokens()` says | clef-flash | 2026-11-01 | Clef's formula |
-| Either picture on TypeSafe | Not measured here | jev-latest | | TypeSafe's formula |
+| Picture sent at 280 x 280 | 202 tokens, formula says 200 (text part sent alone) | jev-1.14.0 | 2026-11-01 | TypeSafe's formula |
+| Picture sent at 1024 x 768 | 2,074 tokens, formula says 2,072 (text part sent alone) | jev-1.14.0 | 2026-11-01 | TypeSafe's formula |
+
+On TypeSafe the formula is within 2 tokens at both sizes. The 2 are the asset
+reference text that comes with a picture.
 
 | Dialect | Figure | Value | Source |
 | --- | --- | --- | --- |
 | TypeSafe | Side of a sent picture | 280 to 1568 px | jevclient 1.3.1's `MIN_IMAGE_SIDE` and `MAX_IMAGE_SIDE`, taken from docs.typesafe.ai/images. The library notes that the API refuses a picture outside them. |
 | TypeSafe | Bytes per picture | 16 MiB | jevclient 1.3.1's `MAX_IMAGE_BYTES`. |
 | TypeSafe | Largest source | 50 MP | A choice. A 48 MP phone photo fits, and a decoded 50 MP picture takes about 150 MB. Refused before decoding. |
-| TypeSafe | Tokens per picture | `2 * ceil(w/28) * ceil(h/28)` | Not measured here. The TypeSafe run fills the row above. |
+| TypeSafe | Tokens per picture | `2 * ceil(w/28) * ceil(h/28)` | Billed within 2 tokens of this at 280 x 280 and 1024 x 768 on jev-1.14.0, 2026-11-01. The 2 are the asset reference text. |
 | Clef | Longest side sent | 1024 px | Past 1024 px the 32 px blocks pass the 1024 token cap, so more pixels cost upload time and buy nothing. |
 | Clef | Pixels sent | at most 1 MP | Planning notes, 2026-10-30. clef-flash took 1024 x 768. |
 | Clef | Bytes per picture | 4 MiB | Planning notes, 2026-10-30. Not measured. A larger encode shrinks by a quarter per side until it fits. |
@@ -86,7 +122,7 @@ difference between the two is the picture's bill.
 ## What common sources cost
 
 The formulas above applied to pictures after resizing. The Clef column is
-measured at two sizes; the TypeSafe column is the formula alone.
+measured at two sizes, and so is the TypeSafe column, to within 2 tokens.
 
 | Source | TypeSafe sends | TypeSafe tokens | Clef sends | Clef tokens |
 | --- | --- | --- | --- | --- |

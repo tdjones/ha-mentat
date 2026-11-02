@@ -22,8 +22,8 @@ CONF_TOKEN_PRICE: Final = "token_price"
 CONF_MAX_IMAGES: Final = "max_images"
 
 # The setup probe: one short noul against a two letter state. clef-flash billed it
-# 143 input tokens (docs/measurements.md, text requests), which at TypeSafe's price
-# is under a thousandth of a cent. TypeSafe's own count is an open row there.
+# 143 input tokens and jev-1.14.0 on TypeSafe billed it 273 (docs/measurements.md,
+# text requests), which at TypeSafe's price is about a thousandth of a cent.
 PROBE_STATE: Final = "ok"
 PROBE_KEY: Final = "probe"
 PROBE_INSTRUCTIONS: Final = "Is this text in English?"
@@ -48,8 +48,8 @@ DEFAULT_SCAN_INTERVAL_SECONDS: Final = 300
 TRIGGER_DEBOUNCE_SECONDS: Final = 1.0
 
 # Entities one watch may send. A record billed 35.5 tokens on clef-flash
-# (docs/measurements.md, text requests), so 250 records are about 8,900 tokens, or
-# $0.0004 at TypeSafe's price if its tokenizer counts alike.
+# and 63.4 on TypeSafe's jev-1.14.0 (docs/measurements.md, text requests), so 250
+# records are about 15,900 tokens there, or $0.0007 at TypeSafe's price.
 MAX_TARGET_ENTITIES: Final = 250
 # A window watch also sends an event log, so it takes fewer entities. The ha-clef
 # house mode replay (house_mode_replay_v2.py) watches 20; 100 is a ceiling chosen
@@ -76,19 +76,23 @@ MAX_SOURCE_FILE_BYTES: Final = 50 * 1024 * 1024
 # upload size, and a 1024 x 768 frame at 90 stays far under Clef's 4 MiB.
 IMAGE_JPEG_QUALITY: Final = 90
 
-# Every request is billed a fixed part beyond its body. clef-flash's fitted fixed
-# part is 88 tokens (docs/measurements.md, text requests). Set a little below it:
-# a fixed part guessed too high makes the learned ratio too high, and then a body
-# much larger than the one it learned from is under-estimated. On clef-flash's
-# line, 250 with a ratio learned from a 500-token call puts a 250-record body 25%
-# short, past the margin. Below the true figure the error is on the safe side.
+# Every request is billed a fixed part beyond its body: 88 tokens on clef-flash and
+# 211 on TypeSafe's jev-1.14.0 (docs/measurements.md, text requests). 80 is under
+# both on purpose. The ledger credits whatever the fixed part leaves over to the
+# body, so an overhead below the true one makes the learned ratio err low and the
+# estimates err high, which is the safe side for a spend guard. An overhead above
+# the true one makes the ratio too high and under-estimates a body much larger than
+# the one it learned from: on clef-flash's line, 250 puts a 250-record body 25%
+# short, past the margin.
 REQUEST_OVERHEAD_TOKENS: Final = 80
-# Body bytes per billed token before any call has been measured. clef-flash bills
-# 3.90 (docs/measurements.md, text requests); 2.8 sits below it because a low ratio
-# over-estimates, which is the safe side. The ledger learns the real ratio from the
-# first call big enough, so another tokenizer calibrates in one request. Bodies are
-# measured as Home Assistant's compact encoder writes them.
-COLD_START_BYTES_PER_TOKEN: Final = 2.8
+# Body bytes per billed token before any call has been measured. TypeSafe's
+# jev-1.14.0 bills 2.19 and clef-flash 3.90 (docs/measurements.md, text requests).
+# The old 2.8 estimated TypeSafe's 20 record body at 1,393 tokens against 1,596
+# billed, 13% short past the 1.2 margin. 2.2 sits at the lower of the two, so it
+# errs high on both, which is the safe side. The ledger learns the real ratio from
+# the first call big enough, so another tokenizer calibrates in one request. Bodies
+# are measured as Home Assistant's compact encoder writes them.
+COLD_START_BYTES_PER_TOKEN: Final = 2.2
 # A call teaches the ratio only when its body was billed at least the fixed part.
 # Below that, rounding in the fixed part swings the ratio, and a ratio learned from a
 # probe-sized call would over-estimate every real request after it.
@@ -96,7 +100,8 @@ MIN_MEASURED_BODY_TOKENS: Final = REQUEST_OVERHEAD_TOKENS
 # Estimates are padded by this much before the budget check. On clef-flash two sends
 # of one body billed the same and the fitted line missed by 3 tokens at most
 # (docs/measurements.md, text requests), so 20% is room for another server's fixed
-# part and tokenizer. TypeSafe's spread is an open row there.
+# part and tokenizer. TypeSafe's jev-1.14.0 sent one body twice with 0.0% spread
+# and the line missed by 5.0 tokens at most (same rows).
 BUDGET_ESTIMATE_MARGIN: Final = 1.2
 
 # The repair issue an entry raises once its daily budget is spent. The id carries the

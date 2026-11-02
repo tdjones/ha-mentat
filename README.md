@@ -62,8 +62,8 @@ For a local or System One server, open Advanced and give the address, the model,
 and the dialect.
 
 Setup sends one short probe question, so a wrong key, address or dialect fails
-before the entry is saved. On clef-flash the probe billed 143 input tokens, which
-at TypeSafe's price is under a thousandth of a cent.
+before the entry is saved. The probe bills about 143 input tokens on clef-flash and
+273 on TypeSafe, which at TypeSafe's price is about a thousandth of a cent.
 
 The entry's options hold the money settings:
 
