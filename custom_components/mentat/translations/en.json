@@ -115,7 +115,7 @@
         },
         "data_description": {
           "token_budget": "The count starts again at local midnight. Set 0 to turn the limit off.",
-          "token_price": "Only the spend sensor uses it. Nothing that is sent depends on it.",
+          "token_price": "The spend sensor and the trial run's cost line use it. Nothing that is sent depends on it.",
           "max_images": "At most 4. Each picture is billed by its pixels."
         }
       }
