@@ -26,11 +26,11 @@ ratio, the line the ledger estimates with.
 | --- | --- | --- | --- | --- |
 | Setup probe, billed | 143 tokens | clef-flash | 2026-11-01 | The `PROBE_*` comment |
 | Fixed part per request, fitted | 88 tokens | clef-flash | 2026-11-01 | `REQUEST_OVERHEAD_TOKENS` = 80 |
-| Body bytes per billed token, fitted | 3.90 | clef-flash | 2026-11-01 | `COLD_START_BYTES_PER_TOKEN` = 2.8 |
+| Body bytes per billed token, fitted | 3.90 | clef-flash | 2026-11-01 | `COLD_START_BYTES_PER_TOKEN` = 2.2 |
 | Largest miss of the fit | 3.1 tokens | clef-flash | 2026-11-01 | `BUDGET_ESTIMATE_MARGIN` = 1.2 |
 | Spread between two sends of one body | 0.0% | clef-flash | 2026-11-01 | `BUDGET_ESTIMATE_MARGIN` = 1.2 |
 | Tokens per entity record | 35.5 | clef-flash | 2026-11-01 | `MAX_TARGET_ENTITIES` = 250 |
-| Cold-start estimate for the 20 record body | 1,401 tokens against 871 billed | clef-flash | 2026-11-01 | The cold start errs high |
+| Cold-start estimate for the 20 record body | 1,756 tokens against 871 billed | clef-flash | 2026-11-01 | The cold start errs high |
 | Setup probe, billed | 273 tokens | jev-1.14.0 | 2026-11-01 | The `PROBE_*` comment |
 | Fixed part per request, fitted | 211 tokens | jev-1.14.0 | 2026-11-01 | `REQUEST_OVERHEAD_TOKENS` = 80 |
 | Body bytes per billed token, fitted | 2.19 | jev-1.14.0 | 2026-11-01 | `COLD_START_BYTES_PER_TOKEN` = 2.2 |

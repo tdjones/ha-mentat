@@ -1,0 +1,114 @@
+# Laundry: say when a finished load is sitting in a machine.
+#
+# One plain watch asks three questions in one request about the two power meters
+# and the laundry door: whether a load is waiting to be unloaded, which stage the
+# machines are at, and how urgently someone should unload. The note works out
+# which machine is running and how many minutes each has been idle, so the model
+# reads the facts and does no arithmetic.
+#
+# The watch asks every 10 minutes, at most 144 requests a day, and again a
+# second after the laundry door opens or closes, so an emptied machine clears
+# the verdict without waiting for the schedule.
+#
+# Paste this under `mentat:` in configuration.yaml or a package, and swap the
+# entities and the 5 W idle line for yours.
+#
+# The watch makes sensor.<entry>_load_waiting with a probability and
+# binary_sensor.<entry>_load_waiting, its verdict at 0.6, plus
+# sensor.<entry>_machine_stage with one of five stages and
+# sensor.<entry>_unload_urgency with a score from 0 to 3. Every answer fires
+# `mentat_decision` with `watch: laundry`.
+
+mentat:
+  - name: Laundry
+    scan_interval: 600
+    entities:
+      - sensor.washing_machine_power
+      - sensor.dryer_power
+      - binary_sensor.laundry_door
+    # Without wake_on, a plain watch asks again a second after any entity it
+    # reads changes. A power meter reports every few seconds while a machine
+    # runs, so the watch would ask all through the cycle.
+    wake_on:
+      - binary_sensor.laundry_door
+    # A meter's last_changed moves with every new reading, so a plug whose idle
+    # draw wobbles between 0.8 W and 1.2 W restarts the idle count. Point the
+    # template at a threshold binary sensor if yours does. Home Assistant also
+    # stamps last_changed afresh on a restart.
+    note: >-
+      {%- set washer = states.sensor.washing_machine_power -%}
+      {%- set door = states.binary_sensor.laundry_door -%}
+      {%- for label, meter in [('washer', washer), ('dryer', states.sensor.dryer_power)] -%}
+        {%- if meter is none or not meter.state | is_number %}
+      The {{ label }} power reading is unavailable.
+        {%- elif meter.state | float > 5 %}
+      The {{ label }} is running.
+        {%- else %}
+      The {{ label }} has been idle for
+      {{ ((now() - meter.last_changed).total_seconds() // 60) | int }} minutes.
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if washer is not none and washer.state | is_number
+            and washer.state | float <= 5
+            and door is not none and is_state('binary_sensor.laundry_door', 'off')
+            and door.last_changed < washer.last_changed %}
+      Nobody has opened the laundry door since the washer stopped.
+      {%- endif %}
+    questions:
+      - name: Load waiting
+        type: noul
+        brief: >-
+          Both machines draw under 5 W when idle. A wash pauses below 5 W for up
+          to 10 minutes while it soaks, so a washer idle for less than that may
+          still be mid cycle. Someone unloading opens the laundry door.
+        instructions: Is a finished load sitting in the washer or the dryer?
+        high: A machine has finished and nobody has unloaded it
+        low: Both machines are running or empty, or someone unloaded since
+        cutoff: 0.6
+
+      - name: Machine stage
+        type: choice
+        instructions: What are the laundry machines doing right now?
+        criteria:
+          washing: The washer is running and the dryer is not
+          drying: The dryer is running and the washer is not
+          both: Both machines are running
+          finished: Neither is running and a finished load is still in one
+          idle:
+
+      - name: Unload urgency
+        type: score
+        instructions: How soon should someone unload the machines?
+        # Lowest first. A wet load starts to smell after a few hours.
+        criteria:
+          - Nothing to unload
+          - Unload when convenient
+          - Unload within the hour
+          - Unload now
+
+# An automation that nags at most every 30 minutes while a load waits. The event
+# leaves out a question the reply did not answer, so the condition reads each
+# answer with a default instead of failing on a missing key.
+#
+# automation:
+#   - alias: Laundry is waiting
+#     mode: single
+#     max_exceeded: silent
+#     triggers:
+#       - trigger: event
+#         event_type: mentat_decision
+#         event_data:
+#           watch: laundry
+#     conditions:
+#       - >-
+#         {%- set answers = trigger.event.data.answers -%}
+#         {{ answers.get('laundry_load_waiting', {}).get('verdict', false)
+#            and answers.get('laundry_unload_urgency', {}).get('normalized', 0) >= 0.6 }}
+#     actions:
+#       - action: notify.notify
+#         data:
+#           message: >-
+#             The laundry is waiting to be unloaded
+#             ({{ (trigger.event.data.answers.laundry_load_waiting.noul * 100) | round }}% sure).
+#       # The run holds for 30 minutes, and decisions in that time are dropped.
+#       - delay: "00:30:00"

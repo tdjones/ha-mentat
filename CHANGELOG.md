@@ -24,8 +24,8 @@ The first release. Not dated until the release commit.
 - A daily token budget per entry, with requests, tokens and spend sensors, an
   over-budget binary sensor and a repair issue. Every request path refuses a
   request that would not fit before sending it. The estimate starts from 80
-  fixed tokens per request and 2.8 body bytes per token, and learns the real
-  ratio from the first large enough call. The 80 sits under the fixed part
+  fixed tokens per request and 2.2 body bytes per token, and relearns the ratio
+  from each large enough call. The 80 sits under the fixed part
   measured on both providers in `docs/measurements.md`, 88 on clef-flash and 211
   on TypeSafe, so the estimate errs high. The 2.2 is TypeSafe's measured 2.19.
   The first guess of 2.8 estimated a 20 record body 13% under its bill there.

@@ -89,8 +89,8 @@ REQUEST_OVERHEAD_TOKENS: Final = 80
 # jev-1.14.0 bills 2.19 and clef-flash 3.90 (docs/measurements.md, text requests).
 # The old 2.8 estimated TypeSafe's 20 record body at 1,393 tokens against 1,596
 # billed, 13% short past the 1.2 margin. 2.2 sits at the lower of the two, so it
-# errs high on both, which is the safe side. The ledger learns the real ratio from
-# the first call big enough, so another tokenizer calibrates in one request. Bodies
+# errs high on both, which is the safe side. Every call big enough replaces the
+# ratio with its own, so another tokenizer calibrates in one request. Bodies
 # are measured as Home Assistant's compact encoder writes them.
 COLD_START_BYTES_PER_TOKEN: Final = 2.2
 # A call teaches the ratio only when its body was billed at least the fixed part.

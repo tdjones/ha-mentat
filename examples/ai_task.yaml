@@ -1,0 +1,75 @@
+# Garage check at night, through the AI Task entity.
+#
+# At 22:00 the automation sends a snapshot of the garage camera to
+# ai_task.mentat with three fields to fill. Each field is one question, and all
+# three go in one request:
+#
+# - door_open, a boolean, is a noul. It comes back true at 0.5 and above.
+# - parked, a select, is a choice among the option values. It comes back as the
+#   winning value, never its label.
+# - clutter, a number from 0 to 10 in steps of 2, is a score with six levels.
+#   It comes back as the weighted level, snapped to the step.
+#
+# A decision model writes no prose, so the structure has no text field. The
+# result's `mentat` key carries each answer's probability or confidence, which
+# a bare true hides. The automation only nags when the noul is 0.8 or more.
+#
+# The entity is named after your Mentat entry; rename it to ai_task.mentat or
+# change the id below. Nothing here makes an entity or fires `mentat_decision`.
+# Paste this into automations.yaml, or under `automation:` in a package.
+
+- id: garage_check_ai_task
+  alias: Garage check at night
+  triggers:
+    - trigger: time
+      at: "22:00:00"
+  actions:
+    - action: ai_task.generate_data
+      data:
+        task_name: Garage check
+        entity_id: ai_task.mentat
+        instructions: The picture is the inside of the garage, taken just now.
+        structure:
+          door_open:
+            description: Is the overhead garage door open?
+            required: true
+            selector:
+              boolean:
+          parked:
+            description: What is parked in the bay nearest the camera?
+            required: true
+            selector:
+              select:
+                options:
+                  - value: car
+                    label: A car
+                  - value: bikes
+                    label: Bikes or a trailer only
+                  - value: empty
+                    label: Nothing
+          clutter:
+            description: >-
+              How cluttered is the garage floor, from 0 (clear) to 10 (no room
+              to walk)?
+            required: true
+            selector:
+              number:
+                min: 0
+                max: 10
+                step: 2
+        attachments:
+          - media_content_id: media-source://camera/camera.garage
+            media_content_type: image/jpeg
+      response_variable: result
+    - if:
+        - >-
+          {{ result.data.door_open
+             and result.data.mentat.answers.door_open.probability >= 0.8 }}
+      then:
+        - action: notify.notify
+          data:
+            message: >-
+              The garage door is open
+              ({{ (result.data.mentat.answers.door_open.probability * 100) | round }}%
+              sure). Parked: {{ result.data.parked }}; clutter
+              {{ result.data.clutter }} of 10.

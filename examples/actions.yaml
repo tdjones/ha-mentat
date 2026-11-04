@@ -1,0 +1,185 @@
+# Actions: one script per Mentat action, each using its answer.
+#
+# An action asks when it is called and returns its answer as a response, so the
+# next step can read it. Nothing here makes an entity or fires
+# `mentat_decision`. Each call is one request, checked against the day's token
+# budget like a watch's.
+#
+# - laundry_done asks a noul and chooses on its verdict.
+# - doorbell_who asks a choice about the front door camera.
+# - garage_urgency asks a score about everything in the garage area.
+# - front_door_left asks two questions about the last 30 minutes at the door.
+# - driveway_car asks whether a car is there and where, in one request.
+# - driveway_car_position asks only where, once a detector says a car is there.
+#
+# A script started from a user's dashboard button runs as that user, and a
+# camera or target they may not read is refused. Paste these into scripts.yaml,
+# or under `script:` in a package.
+
+laundry_done:
+  alias: Is the laundry done
+  sequence:
+    - action: mentat.noul
+      target:
+        entity_id:
+          - sensor.washing_machine_power
+          - binary_sensor.laundry_door
+      data:
+        instructions: Has the wash finished with the load still in the machine?
+        brief: The washer draws under 5 W when idle and over 300 W while it runs.
+        high: The wash is done and nobody has emptied it
+        low: Still running, or already emptied
+        # The verdict is this cutoff applied to the probability, nothing more.
+        cutoff: 0.7
+      response_variable: answer
+    - choose:
+        - conditions: "{{ answer.verdict }}"
+          sequence:
+            - action: notify.notify
+              data:
+                message: >-
+                  The wash is done ({{ (answer.noul * 100) | round }}% sure).
+      default:
+        - action: logbook.log
+          data:
+            name: Laundry
+            message: "not done yet ({{ answer.noul | round(2) }})"
+
+doorbell_who:
+  alias: Who is at the door
+  sequence:
+    - action: mentat.choice
+      data:
+        pictures:
+          - camera.front_door
+        # A script renders its data before the call, so the model reads the
+        # sentence and not the template.
+        note: >-
+          The doorbell rang at {{ now().strftime('%H:%M') }}.
+          {{ 'A delivery is expected today.'
+             if is_state('input_boolean.delivery_expected', 'on')
+             else 'No delivery is expected today.' }}
+        instructions: Who is at the front door?
+        options:
+          delivery: A courier with a parcel, a letter or food
+          visitor: Somebody calling who is not delivering anything
+          # A name that says it all needs no description.
+          nobody:
+      response_variable: answer
+    - if:
+        - "{{ answer.choice == 'delivery' and answer.confidence >= 0.6 }}"
+      then:
+        - action: notify.notify
+          data:
+            message: A delivery is at the front door.
+
+garage_urgency:
+  alias: How urgent is the garage
+  sequence:
+    # Every entity in the area is read, so a sensor added there later is read too.
+    - action: mentat.score
+      target:
+        area_id: garage
+      data:
+        instructions: How urgently does something in the garage need attention?
+        # Lowest first. normalized is the score divided by the top level.
+        scale:
+          - Nothing to do
+          - Worth a look this week
+          - Needs attention today
+          - Needs someone now
+      response_variable: answer
+    - if:
+        - "{{ answer.normalized >= 0.67 }}"
+      then:
+        - action: notify.notify
+          data:
+            message: "Garage: {{ answer.nearest_level }}"
+
+front_door_left:
+  alias: Did someone leave the door unlocked
+  sequence:
+    # Both questions share one request and one reading of the recorder.
+    - action: mentat.ask
+      target:
+        entity_id:
+          - binary_sensor.front_door
+          - binary_sensor.hall_motion
+          - lock.front_door
+      data:
+        window:
+          duration: "00:30:00"
+        questions:
+          left_unlocked:
+            type: noul
+            instructions: >-
+              Did someone go out through the front door and leave it unlocked?
+          traffic:
+            type: score
+            instructions: How much coming and going was there at the front door?
+            criteria:
+              - None
+              - Once
+              - A few times
+              - Constant
+      response_variable: seen
+    - if:
+        - >-
+          {{ seen.answers.left_unlocked.noul >= 0.7
+             and is_state('lock.front_door', 'unlocked') }}
+      then:
+        - action: notify.notify
+          data:
+            message: >-
+              The front door looks left unlocked
+              ({{ (seen.answers.left_unlocked.noul * 100) | round }}% sure).
+
+# A box question always returns a box, even when the thing is absent, so a noul
+# beside it on the same picture says whether to believe the box. Asking both in
+# one request bills the picture once. A box needs a TypeSafe entry on Jev 1.14
+# or later; a Clef entry refuses it before sending.
+driveway_car:
+  alias: Is a car on the driveway, and where
+  sequence:
+    - action: mentat.ask
+      data:
+        pictures:
+          - camera.driveway
+        questions:
+          car_present:
+            type: noul
+            instructions: Is a car parked on the driveway?
+          car:
+            type: box
+            instructions: the car parked on the driveway
+      response_variable: seen
+    - if:
+        - "{{ seen.answers.car_present.noul >= 0.6 }}"
+      then:
+        - action: notify.notify
+          data:
+            message: >-
+              A car is parked on the
+              {{ 'left' if (seen.answers.car.left + seen.answers.car.right) / 2 < 0.5
+                 else 'right' }} of the driveway.
+
+# mentat.box alone, when something else already says the car is there.
+driveway_car_position:
+  alias: Where is the car on the driveway
+  sequence:
+    - condition: state
+      entity_id: binary_sensor.driveway_camera_vehicle
+      state: "on"
+    - action: mentat.box
+      data:
+        picture: camera.driveway
+        instructions: the car parked on the driveway
+      response_variable: box
+    # The edges are fractions of the picture; width and height turn them into pixels.
+    - action: logbook.log
+      data:
+        name: Driveway
+        message: >-
+          Car from x={{ (box.left * box.width) | round }} to
+          x={{ (box.right * box.width) | round }} px
+          ({{ (box.confidence * 100) | round }}% fit).
