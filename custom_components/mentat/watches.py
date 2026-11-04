@@ -61,6 +61,7 @@ from .const import (
     CONF_NOTE,
     CONF_OPTIONS,
     CONF_QUESTIONS,
+    CONF_RELEASE,
     CONF_SCALE,
     CONF_SETTLE,
     CONF_TARGET,
@@ -124,6 +125,9 @@ class QuestionSpec:
     kind: str
     question: Question
     cutoff: float | None = None
+    # Below this a verdict turns off; between it and the cutoff it holds. None
+    # is the cutoff itself, which leaves no band to hold in.
+    release: float | None = None
 
     @property
     def wants_verdict(self) -> bool:
@@ -244,13 +248,20 @@ def question_from_mapping(raw: Mapping[str, Any]) -> Question:
     return make(fold_brief(raw[CONF_INSTRUCTIONS], raw.get(CONF_BRIEF)), raw)
 
 
-def cutoff_from(raw: Mapping[str, Any]) -> float | None:
-    """The cutoff as a number, or None when there is none.
+def _number(raw: Mapping[str, Any], key: str) -> float | None:
+    # The editor stores a cleared number box as "", which means none.
+    value = raw.get(key)
+    return None if value in (None, "") else float(value)
 
-    The editor stores a cleared number box as "", which means no cutoff.
-    """
-    cutoff = raw.get(CONF_CUTOFF)
-    return None if cutoff in (None, "") else float(cutoff)
+
+def cutoff_from(raw: Mapping[str, Any]) -> float | None:
+    """The cutoff as a number, or None when there is none."""
+    return _number(raw, CONF_CUTOFF)
+
+
+def release_from(raw: Mapping[str, Any]) -> float | None:
+    """The release as a number, or None when there is none."""
+    return _number(raw, CONF_RELEASE)
 
 
 def question_spec(raw: Mapping[str, Any], key: str) -> QuestionSpec:
@@ -261,6 +272,7 @@ def question_spec(raw: Mapping[str, Any], key: str) -> QuestionSpec:
         kind=raw[CONF_TYPE],
         question=question_from_mapping(raw),
         cutoff=cutoff_from(raw),
+        release=release_from(raw),
     )
 
 

@@ -28,6 +28,7 @@ from .const import (
     ATTR_CONFIDENCE,
     ATTR_LEGEND,
     ATTR_NEAREST_LEVEL,
+    ATTR_NORMALIZED,
     ATTR_PROBABILITIES,
     ATTR_QUESTION_TYPE,
     ATTR_QUESTIONS,
@@ -112,7 +113,14 @@ _KINDS: dict[str, _Kind] = {
     TYPE_SCORE: _Kind(
         ScoreAnswer,
         lambda a: round(a.score, 3),
-        lambda a: {**_spread(a), ATTR_LEGEND: a.legend, ATTR_NEAREST_LEVEL: a.nearest_level},
+        lambda a: {
+            **_spread(a),
+            # The score over its top level, so scales of different lengths can be
+            # weighed against each other in a template.
+            ATTR_NORMALIZED: round(a.normalized, 4),
+            ATTR_LEGEND: a.legend,
+            ATTR_NEAREST_LEVEL: a.nearest_level,
+        },
     ),
 }
 

@@ -56,6 +56,7 @@ async def test_sensor_each_question_type_reads_its_answer(
     assert score.state == "1.4"
     assert score.attributes["legend"] == {"0": "Not yet", "1": "Today", "2": "Now"}
     assert score.attributes["nearest_level"] == "Today"
+    assert score.attributes["normalized"] == 0.7
     assert score.attributes["confidence"] == 0.6
     assert score.attributes["probabilities"] == {"0": 0.1, "1": 0.4, "2": 0.5}
 

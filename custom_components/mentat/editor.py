@@ -39,6 +39,7 @@ from .const import (
     CONF_LOW,
     CONF_NOTE,
     CONF_OPTIONS,
+    CONF_RELEASE,
     CONF_SCALE,
     CONF_TARGET,
     CONF_WAKE_ON,
@@ -70,7 +71,7 @@ from .const import (
 )
 from .preview import describe_sharing, describe_window, draft_state, trial
 from .schema import EVENT_FILTER_SCHEMA
-from .watches import is_own_event, options_from, scale_from
+from .watches import cutoff_from, is_own_event, options_from, release_from, scale_from
 
 # Errors that belong to no one field, or to a field inside a collapsed
 # section, where nobody would see them.
@@ -136,6 +137,7 @@ _FIELDS: Final[tuple[_Field, ...]] = (
     _Field(CONF_HIGH, sel.TextSelector(), kinds=frozenset({TYPE_NOUL})),
     _Field(CONF_LOW, sel.TextSelector(), kinds=frozenset({TYPE_NOUL})),
     _Field(CONF_CUTOFF, _box(0, 1, step=0.01), kinds=frozenset({TYPE_NOUL})),
+    _Field(CONF_RELEASE, _box(0, 1, step=0.01), kinds=frozenset({TYPE_NOUL})),
     _Field(CONF_OPTIONS, _LINES, required=True, kinds=frozenset({TYPE_CHOICE})),
     _Field(CONF_SCALE, _LINES, required=True, kinds=frozenset({TYPE_SCORE})),
     _Field(CONF_TARGET, sel.TargetSelector()),
@@ -277,6 +279,15 @@ def _is_choice(data: Mapping[str, Any]) -> bool:
     return bool(data[CONF_TYPE] == TYPE_CHOICE)
 
 
+def _release_alone(data: Mapping[str, Any]) -> bool:
+    return release_from(data) is not None and cutoff_from(data) is None
+
+
+def _release_over_cutoff(data: Mapping[str, Any]) -> bool:
+    release, cutoff = release_from(data), cutoff_from(data)
+    return release is not None and cutoff is not None and release > cutoff
+
+
 type _Rule = tuple[Callable[[Mapping[str, Any]], bool], str, str]
 
 # Read top to bottom; a field keeps the first error found for it. The window
@@ -321,6 +332,9 @@ _RULES: Final[tuple[_Rule, ...]] = (
         CONF_OPTIONS,
         "options_count",
     ),
+    # The YAML schema's release_problem() in form shape.
+    (_release_alone, CONF_RELEASE, "release_without_cutoff"),
+    (_release_over_cutoff, CONF_RELEASE, "release_over_cutoff"),
     (
         lambda d: (
             d[CONF_TYPE] == TYPE_SCORE

@@ -144,7 +144,8 @@ def test_flatten_lifts_both_sections_and_nest_puts_them_back() -> None:
 
 def test_forms_carry_only_their_own_answer_fields() -> None:
     keys = {kind: {str(marker) for marker in form.schema} for kind, form in FORMS.items()}
-    assert {"high", "low", "cutoff"} <= keys["noul"]
+    assert {"high", "low", "cutoff", "release"} <= keys["noul"]
+    assert not {"cutoff", "release"} & (keys["choice"] | keys["score"])
     assert "options" in keys["choice"]
     assert "scale" in keys["score"]
     assert not {"options", "scale"} & keys["noul"]
@@ -317,6 +318,16 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
             },
             {"base": "window_event_is_own"},
         ),
+        (
+            "noul",
+            {"target": {"entity_id": [FREEZER]}, "release": 0.3},
+            {"release": "release_without_cutoff"},
+        ),
+        (
+            "noul",
+            {"target": {"entity_id": [FREEZER]}, "cutoff": 0.5, "release": 0.6},
+            {"release": "release_over_cutoff"},
+        ),
     ],
     ids=[
         "empty",
@@ -330,6 +341,8 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
         "settle-long",
         "events-bad",
         "events-own",
+        "release-alone",
+        "release-over",
     ],
 )
 async def test_form_with_a_problem_shows_again_with_the_error_on_its_field(

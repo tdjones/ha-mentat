@@ -182,6 +182,12 @@
     "question_invalid": {
       "message": "Mentat cannot send question {key}: {reason}"
     },
+    "question_release": {
+      "message": "Question {key} has a release. A release keeps a verdict from one evaluation of a watch to the next, and an action keeps nothing between calls. Compare the probability in the script instead."
+    },
+    "question_cutoff_noul_only": {
+      "message": "Question {key} has a cutoff, and only a noul has one."
+    },
     "box_needs_image": {
       "message": "Question {key} is a box, and a box needs a picture under pictures."
     },
@@ -323,7 +329,8 @@
             "brief": "Brief",
             "high": "High means",
             "low": "Low means",
-            "cutoff": "Cutoff for a verdict sensor"
+            "cutoff": "Cutoff for a verdict sensor",
+            "release": "Verdict turns off below"
           },
           "data_description": {
             "name": "The sensor this question makes takes this name.",
@@ -333,7 +340,8 @@
             "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
             "high": "Optional. The situation a probability near 1 stands for.",
             "low": "Optional. The situation a probability near 0 stands for.",
-            "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it."
+            "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it.",
+            "release": "Optional. Below this the verdict turns off; between it and the cutoff it keeps its last state, so a probability that wobbles around the cutoff does not flip it. Empty means the cutoff, as before. A number from 0 up to the cutoff."
           },
           "sections": {
             "advanced": {
@@ -499,6 +507,7 @@
             "high": "High means",
             "low": "Low means",
             "cutoff": "Cutoff for a verdict sensor",
+            "release": "Verdict turns off below",
             "options": "Options",
             "scale": "Scale"
           },
@@ -511,6 +520,7 @@
             "high": "Optional. The situation a probability near 1 stands for.",
             "low": "Optional. The situation a probability near 0 stands for.",
             "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it.",
+            "release": "Optional. Below this the verdict turns off; between it and the cutoff it keeps its last state, so a probability that wobbles around the cutoff does not flip it. Empty means the cutoff, as before. A number from 0 up to the cutoff.",
             "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options.",
             "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree."
           },
@@ -568,7 +578,9 @@
         "window_duration_out_of_range": "A window lasts from 1 minute to 24 hours.",
         "window_settle_too_long": "The quiet before judging cannot be longer than the window.",
         "window_events_invalid": "Bus events are a list of items, each with an event_type and optionally data and label.",
-        "window_event_is_own": "A window cannot log Mentat's own events such as mentat_decision. Each answer fires one, so the question would ask again after every answer."
+        "window_event_is_own": "A window cannot log Mentat's own events such as mentat_decision. Each answer fires one, so the question would ask again after every answer.",
+        "release_without_cutoff": "A verdict turns off below this, so it needs a cutoff to turn on at.",
+        "release_over_cutoff": "This has to be at most the cutoff. Above it, one probability would turn the verdict both on and off."
       },
       "abort": {
         "reconfigure_successful": "Saved."
@@ -631,6 +643,9 @@
           },
           "probabilities": {
             "name": "Probability per level"
+          },
+          "normalized": {
+            "name": "Normalized"
           },
           "legend": {
             "name": "Scale"
@@ -695,6 +710,12 @@
           "cutoff": {
             "name": "Cutoff"
           },
+          "release": {
+            "name": "Turns off below"
+          },
+          "held": {
+            "name": "Held"
+          },
           "window_start": {
             "name": "Window start"
           },
@@ -728,6 +749,8 @@
     "trial_cost": "This trial cost {tokens} tokens, about {cost} USD, and took {ms} ms.",
     "trial_cutoff_over": "With a cutoff of {cutoff}, the verdict sensor would read on.",
     "trial_cutoff_under": "With a cutoff of {cutoff}, the verdict sensor would read off.",
+    "trial_release_under": "Under the release of {release}, the verdict sensor would read off.",
+    "trial_cutoff_held": "Between the release of {release} and the cutoff of {cutoff}, the verdict sensor would keep the state it had.",
     "trial_winner": "The model leans to **{choice}**. Confidence in this answer: {confidence}.",
     "trial_score": "The answer lands at **{score}**, nearest to **{level}**. Confidence in this answer: {confidence}.",
     "trial_undrawable": "This version of Mentat cannot show an answer of that shape.",
@@ -876,7 +899,7 @@
         },
         "questions": {
           "name": "Questions",
-          "description": "Your own key per question, then its type (noul, choice, score or box), its instructions, and criteria for choice and score. The keys come back as the keys of the answers."
+          "description": "Your own key per question, then its type (noul, choice, score or box), its instructions, and criteria for choice and score. A noul may add a cutoff, and its answer then carries a verdict. The keys come back as the keys of the answers."
         },
         "window": {
           "name": "Window",

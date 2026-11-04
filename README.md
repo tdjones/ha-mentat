@@ -18,7 +18,7 @@ made-up answers. The forms, entities and responses are Mentat's own.
 
 | Type | Answer | Entity |
 | --- | --- | --- |
-| `noul` | A probability from 0 to 1 that the statement is true. | A sensor with the probability. With a `cutoff`, also a verdict binary sensor that is on once the probability reaches it. |
+| `noul` | A probability from 0 to 1 that the statement is true. | A sensor with the probability. With a `cutoff`, also a verdict binary sensor that is on once the probability reaches it. With a `release` as well, the verdict turns off only below the release. |
 | `choice` | One of 2 to 255 options, with a confidence and the probability of every option. | A sensor whose state is the winning option. |
 | `score` | A weighted level on 2 to 10 levels you list lowest first, with the nearest level and a confidence. | A sensor with the weighted level and the levels as a legend. |
 
@@ -28,6 +28,14 @@ returns its edges. YAML watches and the question editor do not offer it.
 A noul's probability is the whole answer, so it has no confidence. A choice or
 score carries `confidence` beside its answer. Neither is calibrated: watch real
 answers for a while before you pick a cutoff.
+
+A verdict with only a cutoff flips each time the probability crosses it, so an
+answer that wobbles around 0.7 can turn it on and off on every evaluation. Give
+it a `release` below the cutoff and it holds between the two: on at or over the
+cutoff, off under the release, and whatever the last answer left it in between.
+TypeSafe's documentation suggests 0.7 for yes and 0.3 for no as a starting
+point; Mentat has not measured either. Nothing is held across a restart, as no answer is, so a first answer
+inside the band leaves the verdict unknown until one lands outside it.
 
 ## Providers and dialects
 
@@ -134,6 +142,9 @@ Pick the answer type, then fill in the form:
   near 0 stand for. Both are optional.
 - **Cutoff for a verdict sensor**, for a noul. Empty gives the probability sensor
   alone. With a value, a verdict binary sensor turns on at that probability.
+- **Verdict turns off below**, for a noul with a cutoff. Empty turns the verdict
+  off below the cutoff. A lower value holds it in between, as under
+  [Question types](#question-types) describes. It cannot be over the cutoff.
 - **Options**, for a choice: one per line as `name: what it means`. The
   description is optional. 2 to 255 lines, no line may start with a colon, and no
   name may appear twice.
@@ -230,7 +241,8 @@ mentat:
         brief: A cycle ends with power under 5 W for two minutes.
         high: The cycle has finished and the drum is idle
         low: The machine is still washing, rinsing or spinning
-        cutoff: 0.7
+        cutoff: 0.7                 # the verdict turns on at or over this
+        release: 0.3                # and off under this; in between it holds
       - name: Laundry stage
         type: choice
         instructions: Where is the laundry right now?
@@ -278,8 +290,10 @@ Mentat checks the block when Home Assistant reads it, and refuses:
   `Mode quiet`;
 - a choice whose `criteria` is not a mapping of 2 to 255, a score whose `criteria`
   is not a list of 2 to 10, and `criteria` on a noul;
-- a `cutoff` outside 0 to 1, a `scan_interval` under 1 or not a whole number, and
-  a `note` that is not a valid template;
+- a `cutoff` or `release` outside 0 to 1, a `release` with no `cutoff` or over
+  it, and either one on a choice or a score;
+- a `scan_interval` under 1 or not a whole number, and a `note` that is not a
+  valid template;
 - an unquoted `yes`, `no`, `on` or `off` used as a word under `high`, `low` or a
   scale level. YAML reads them as true or false, so quote them, as in
   `high: "on"`;
@@ -369,9 +383,9 @@ belongs to it.
 | Entity | State | Attributes |
 | --- | --- | --- |
 | Noul question sensor | The probability, to 3 places | `question_type` |
-| Verdict binary sensor | On once the probability reaches the cutoff | `probability`, `cutoff` |
+| Verdict binary sensor | On once the probability reaches the cutoff, off under the release, held in between | `probability`, `cutoff`, and with a release `release` and `held` |
 | Choice question sensor | The winning option, an enum sensor | `question_type`, `options`, `confidence`, `probabilities` |
-| Score question sensor | The weighted level, counted from 0 for the lowest | `question_type`, `confidence`, `probabilities`, `legend`, `nearest_level` |
+| Score question sensor | The weighted level, counted from 0 for the lowest | `question_type`, `confidence`, `probabilities`, `normalized`, `legend`, `nearest_level` |
 | Requests today | Requests billed since midnight | |
 | Tokens today | Input tokens billed since midnight | `token_budget` |
 | Spend today | An estimate in US dollars | `token_price` |
@@ -381,7 +395,10 @@ belongs to it.
 | AI Task | See [AI Task](#ai-task) | |
 
 A score's `probabilities` and `legend` are keyed by level number as text, `"0"`
-for the lowest. A window watch's question and verdict entities also carry
+for the lowest. `normalized` is the score over its top level, from 0 to 1, so
+scores with scales of different lengths can be weighed together in a template.
+`held` is true when the verdict kept its last state because the probability sat
+between release and cutoff. A window watch's question and verdict entities also carry
 `window_start`, `window_end`, `event_count` and `last_evaluated`. Confidence is
 rounded to 3 places and probabilities to 4. Mentat keeps these attributes out of
 the recorder.
@@ -396,6 +413,10 @@ shows a stale or made-up value. It goes unavailable when:
 - a choice came back with an option it does not list;
 - Home Assistant has just started and the watch has not answered yet. Mentat does
   not restore an old answer after a restart.
+
+A verdict whose first answer since a restart lands between release and cutoff
+reads unknown rather than unavailable: its probability sensor has an answer, and
+nothing yet says which side of the band the verdict was on.
 
 A watch that nothing reads is not asked at all: one with `fire_event: false`
 whose question, verdict and diagnostic entities are all disabled. A watch that
@@ -416,7 +437,8 @@ answers:
     type: noul
     noul: 0.83
     name: Everyone asleep
-    verdict: true               # only for a noul with a cutoff
+    verdict: true               # only for a noul with a cutoff, once it is known
+    held: false                 # only for a noul with a release
 window: {start: "...", end: "...", events: 42}   # null for a plain watch
 model: jev-1.14.0
 latency_ms: 274.0
@@ -566,8 +588,9 @@ response_variable: answer
 ```
 
 Returns `answers`, keyed as you named the questions, plus `model`, `latency_ms`
-and `usage`. Each answer carries its `type`. A noul here has no cutoff and no
-verdict; compare `noul` yourself. A box question needs `pictures` and its answer
+and `usage`. Each answer carries its `type`. A noul given a `cutoff` also
+carries `verdict` and `cutoff`, as `mentat.noul` returns them. A `release` is
+refused, because an action keeps nothing from one call to the next to hold. A box question needs `pictures` and its answer
 has the edges and `confidence` but not the picture's size.
 
 ### mentat.box

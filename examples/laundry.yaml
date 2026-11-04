@@ -14,8 +14,8 @@
 # entities and the 5 W idle line for yours.
 #
 # The watch makes sensor.<entry>_load_waiting with a probability and
-# binary_sensor.<entry>_load_waiting, its verdict at 0.6, plus
-# sensor.<entry>_machine_stage with one of five stages and
+# binary_sensor.<entry>_load_waiting, its verdict, on at 0.6 and off under 0.4,
+# plus sensor.<entry>_machine_stage with one of five stages and
 # sensor.<entry>_unload_urgency with a score from 0 to 3. Every answer fires
 # `mentat_decision` with `watch: laundry`.
 
@@ -65,6 +65,9 @@ mentat:
         high: A machine has finished and nobody has unloaded it
         low: Both machines are running or empty, or someone unloaded since
         cutoff: 0.6
+        # Between 0.4 and 0.6 the verdict keeps its last state, so a wobbling
+        # answer does not nag and then clear. Both numbers are a choice.
+        release: 0.4
 
       - name: Machine stage
         type: choice

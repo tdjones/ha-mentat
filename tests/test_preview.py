@@ -27,6 +27,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.mentat.const import CONF_TOKEN_BUDGET, DOMAIN, SUBENTRY_QUESTION
 from custom_components.mentat.preview import (
     BAR_WIDTH,
+    Cutoffs,
     describe_window,
     draw_answer,
     readable,
@@ -258,6 +259,28 @@ async def test_draw_answer_draws_a_noul_as_one_bar(hass: HomeAssistant) -> None:
     assert drawn == f"`{'█' * (BAR_WIDTH // 2)}{'░' * (BAR_WIDTH // 2)}`  **0.50**"
 
 
+@pytest.mark.parametrize(
+    ("noul", "cutoffs", "sentence"),
+    [
+        (0.7, Cutoffs(0.7, 0.3), "With a cutoff of 0.7, the verdict sensor would read on."),
+        (0.5, Cutoffs(0.7), "With a cutoff of 0.7, the verdict sensor would read off."),
+        (0.2, Cutoffs(0.7, 0.3), "Under the release of 0.3, the verdict sensor would read off."),
+        (
+            0.3,
+            Cutoffs(0.7, 0.3),
+            "Between the release of 0.3 and the cutoff of 0.7, "
+            "the verdict sensor would keep the state it had.",
+        ),
+    ],
+    ids=["over", "under-no-release", "under-release", "held"],
+)
+async def test_draw_answer_says_where_a_noul_leaves_its_verdict(
+    hass: HomeAssistant, noul: float, cutoffs: Cutoffs, sentence: str
+) -> None:
+    say = await sentences(hass)
+    assert draw_answer(NoulAnswer(noul=noul), cutoffs, say).split("\n\n")[1] == sentence
+
+
 async def test_draw_answer_ranks_a_choice_and_keeps_a_score_in_level_order(
     hass: HomeAssistant,
 ) -> None:
@@ -279,7 +302,8 @@ async def test_draw_answer_of_a_box_says_it_has_no_drawing(hass: HomeAssistant) 
     say = await sentences(hass)
     box = BoxAnswer(top=0.1, bottom=0.2, left=0.3, right=0.4, confidence=0.5)
     assert (
-        draw_answer(box, 0.5, say) == "This version of Mentat cannot show an answer of that shape."
+        draw_answer(box, Cutoffs(0.5), say)
+        == "This version of Mentat cannot show an answer of that shape."
     )
 
 

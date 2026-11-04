@@ -43,6 +43,7 @@ from .const import (
     CONF_MAX_EVENTS,
     CONF_NOTE,
     CONF_QUESTIONS,
+    CONF_RELEASE,
     CONF_SETTLE,
     CONF_TYPE,
     CONF_WAKE_ON,
@@ -87,8 +88,10 @@ def not_boolean(value: Any) -> Any:
 # A word or a structure, never a bare boolean: high, low and every scale level.
 WORDING = vol.All(not_boolean, ENTRY)
 
+PROBABILITY = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1.0))
+
 _RENAME: Final = "give them names that differ by more than punctuation or case"
-_NOUL_ONLY: Final = "'high:', 'low:' and 'cutoff:' apply to a noul only"
+_NOUL_ONLY: Final = "'high:', 'low:', 'cutoff:' and 'release:' apply to a noul only"
 
 # What a question of the wrong type says for each key it should not carry.
 _STRAY: Final = {
@@ -96,6 +99,7 @@ _STRAY: Final = {
     CONF_HIGH: _NOUL_ONLY,
     CONF_LOW: _NOUL_ONLY,
     CONF_CUTOFF: _NOUL_ONLY,
+    CONF_RELEASE: _NOUL_ONLY,
 }
 
 
@@ -119,10 +123,25 @@ def _levels_fit(criteria: Any) -> str | None:
 
 # Per type: which of the typed keys it may carry, and what its criteria must be.
 _SHAPES: Final[dict[str, tuple[frozenset[str], Callable[[Any], str | None] | None]]] = {
-    TYPE_NOUL: (frozenset({CONF_HIGH, CONF_LOW, CONF_CUTOFF}), None),
+    TYPE_NOUL: (frozenset({CONF_HIGH, CONF_LOW, CONF_CUTOFF, CONF_RELEASE}), None),
     TYPE_CHOICE: (frozenset({CONF_CRITERIA}), _options_fit),
     TYPE_SCORE: (frozenset({CONF_CRITERIA}), _levels_fit),
 }
+
+
+def release_problem(cutoff: float | None, release: float | None) -> str | None:
+    """Why a release cannot go with this cutoff, or None when it can.
+
+    A release over the cutoff would turn the verdict off at a probability that
+    also turns it on.
+    """
+    if release is None:
+        return None
+    if cutoff is None:
+        return "'release:' is where a verdict turns off, so it needs 'cutoff:'"
+    if release > cutoff:
+        return f"'release:' ({release:g}) cannot be over 'cutoff:' ({cutoff:g})"
+    return None
 
 
 def question_shape(raw: dict[str, Any]) -> dict[str, Any]:
@@ -132,6 +151,8 @@ def question_shape(raw: dict[str, Any]) -> dict[str, Any]:
     if problem is None:
         stray = [key for key in _STRAY if key not in allowed and raw.get(key) is not None]
         problem = _STRAY[stray[0]] if stray else None
+    if problem is None:
+        problem = release_problem(raw.get(CONF_CUTOFF), raw.get(CONF_RELEASE))
     if problem is not None:
         raise vol.Invalid(f"question {raw.get(CONF_NAME, '?')!r}: {problem}")
     return raw
@@ -147,7 +168,8 @@ QUESTION_SCHEMA = vol.All(
             vol.Optional(CONF_HIGH): WORDING,
             vol.Optional(CONF_LOW): WORDING,
             vol.Optional(CONF_CRITERIA): vol.Any({cv.string: vol.Any(ENTRY, None)}, [WORDING]),
-            vol.Optional(CONF_CUTOFF): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1.0)),
+            vol.Optional(CONF_CUTOFF): PROBABILITY,
+            vol.Optional(CONF_RELEASE): PROBABILITY,
         }
     ),
     question_shape,

@@ -1,4 +1,4 @@
-"""Binary sensors: a noul's verdict against its cutoff, and the budget tripwire."""
+"""Binary sensors: a noul's verdict against its cutoff and release, and the budget tripwire."""
 
 from __future__ import annotations
 
@@ -15,15 +15,17 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from jevclient import NoulAnswer
 
 from .const import (
+    ATTR_HELD,
     ATTR_PROBABILITY,
     CONF_CUTOFF,
+    CONF_RELEASE,
     CONF_TOKEN_BUDGET,
     UID_OVER_BUDGET,
     UID_TOKENS,
     UID_VERDICT,
     WINDOW_ATTRIBUTES,
 )
-from .coordinator import MentatCoordinator, verdict
+from .coordinator import MentatCoordinator
 from .entity import (
     MentatLedgerEntity,
     MentatQuestionEntity,
@@ -58,7 +60,9 @@ async def async_setup_entry(
 class MentatVerdictSensor(MentatQuestionEntity, BinarySensorEntity):
     """A noul compared with its cutoff, so an automation can trigger on a state.
 
-    Only questions that want a verdict get one: a noul with a cutoff.
+    Only questions that want a verdict get one: a noul with a cutoff. The
+    coordinator judges it once per answer, because a verdict held between
+    release and cutoff depends on the one before.
     """
 
     _unrecorded_attributes = WINDOW_ATTRIBUTES
@@ -69,14 +73,25 @@ class MentatVerdictSensor(MentatQuestionEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return verdict(self.spec, self.answer)
+        if not isinstance(self.answer, NoulAnswer):
+            return None
+        judged = self.coordinator.verdicts.get(self._key)
+        return None if judged is None else judged.on
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         answer = self.answer
         if not isinstance(answer, NoulAnswer):
             return None
-        attributes = {ATTR_PROBABILITY: round(answer.noul, 3), CONF_CUTOFF: self.spec.cutoff}
+        spec = self.spec
+        attributes: dict[str, Any] = {
+            ATTR_PROBABILITY: round(answer.noul, 3),
+            CONF_CUTOFF: spec.cutoff,
+        }
+        if spec.release is not None:
+            judged = self.coordinator.verdicts.get(self._key)
+            attributes[CONF_RELEASE] = spec.release
+            attributes[ATTR_HELD] = judged is not None and judged.held
         return attributes | self._window_attributes()
 
 

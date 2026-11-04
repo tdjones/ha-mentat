@@ -22,7 +22,10 @@ The user pays for every request by the input token.
 ## Answers an automation can trust
 
 A question entity with no answer to its own question is unavailable. It never
-shows a stale or made-up value. Choice and score entities carry the model's
+shows a stale or made-up value. An entity that has its answer but whose own rules
+cannot give a value yet, such as a verdict first answered between release and
+cutoff, is unknown and stays available. `judge.py` holds those rules, so the
+entities and the event read one judgement. Choice and score entities carry the model's
 confidence as an attribute. A noul has no confidence attribute, because its
 probability is already the whole answer.
 
@@ -125,6 +128,7 @@ Its output goes into `docs/measurements.md`.
 - `readings.py`: target to sorted entity records, refusals, redaction.
 - `window.py`: a window's log, the recorder backfill, a window watch's state.
 - `watches.py`: frozen watch and question dataclasses and the shared question builder.
+- `judge.py`: what an answer shows after its question's own rules, such as a held verdict.
 - `schema.py`: the YAML schema, which refuses what the API would refuse.
 - `pictures.py`: fetches, turns, sizes, encodes and bills pictures per dialect.
 - `fields.py`: AI Task fields to questions, and answers back to field values.

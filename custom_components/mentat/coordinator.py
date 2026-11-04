@@ -43,7 +43,6 @@ from jevclient import (
     JevError,
     JevRateLimitError,
     JevResponse,
-    NoulAnswer,
     Question,
 )
 
@@ -51,6 +50,7 @@ from .budget import Ledger
 from .client import DecisionClient
 from .const import (
     ATTR_EVENT_COUNT,
+    ATTR_HELD,
     ATTR_LAST_EVALUATED,
     ATTR_WINDOW_END,
     ATTR_WINDOW_START,
@@ -65,9 +65,10 @@ from .const import (
     UID_WATCH,
     YAML_ID_SCOPE,
 )
+from .judge import Verdict, verdict
 from .providers import Provider
 from .readings import async_state, is_mentat_entity
-from .watches import QuestionSpec, WatchConfig, answer_as_dict
+from .watches import WatchConfig, answer_as_dict
 from .window import EventWindow, async_build_window_state
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,16 +83,6 @@ def unique_id(scope: str, *parts: str) -> str:
     question named "latency" cannot take its watch's latency diagnostic's id.
     """
     return ":".join((scope, *parts))
-
-
-def verdict(spec: QuestionSpec, answer: Answer | None) -> bool | None:
-    """True for a noul at or over its cutoff. None when there is no verdict to give.
-
-    A cutoff of 0 is a cutoff, so only a missing one means no verdict.
-    """
-    if spec.cutoff is None or not isinstance(answer, NoulAnswer):
-        return None
-    return answer.noul >= spec.cutoff
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +180,10 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
         self.id_scope = YAML_ID_SCOPE if watch.from_yaml else entry.entry_id
         self.window: EventWindow | None = None
         self.last: Exchange | None = None
+        # Each verdict as the last answer left it, by question key. A verdict
+        # held between release and cutoff reads the one before. Nothing is kept
+        # across a restart, as no answer is.
+        self.verdicts: dict[str, Verdict] = {}
         # Unsubscribe callbacks, run last first at shutdown.
         self._stops: list[CALLBACK_TYPE] = []
         self._debouncer: Debouncer[None] | None = None
@@ -385,8 +380,9 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
         body_bytes = self.runtime.client.body_size(state, questions)
         response = await self._send(state, questions, body_bytes)
         self._record(response, state, body_bytes, now)
+        judged = self._judge(response.answers)
         if self.watch_config.fire_event:
-            self._fire_decision(response)
+            self._fire_decision(response, judged)
         return response.answers
 
     def _render_note(self) -> str | None:
@@ -488,20 +484,40 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
         )
         runtime.ledger.notify()
 
+    def _judge(self, answers: dict[str, Answer]) -> dict[str, Verdict]:
+        """Each verdict the new answers give, judged from the ones before them.
+
+        A question the reply left out keeps its last verdict, so a later answer
+        between release and cutoff still has something to hold.
+        """
+        judged: dict[str, Verdict] = {}
+        for spec in self.watch_config.questions:
+            before = self.verdicts.get(spec.key)
+            given = verdict(spec, answers.get(spec.key), None if before is None else before.on)
+            if given is not None:
+                judged[spec.key] = given
+        self.verdicts.update(judged)
+        return judged
+
     @callback
-    def _fire_decision(self, response: JevResponse) -> None:
+    def _fire_decision(self, response: JevResponse, judged: dict[str, Verdict]) -> None:
         """Put the answers on the bus, so an automation can trigger on a decision.
 
-        A question the reply left out is left out of the event too.
+        A question the reply left out is left out of the event too, and so is a
+        verdict nobody can give yet.
         """
         watch = self.watch_config
         answers: dict[str, Any] = {}
         for spec in watch.questions:
             if (answer := response.answers.get(spec.key)) is None:
                 continue
-            answers[spec.key] = answer_as_dict(answer) | {"name": spec.name}
-            if (decided := verdict(spec, answer)) is not None:
-                answers[spec.key]["verdict"] = decided
+            answers[spec.key] = shown = answer_as_dict(answer) | {"name": spec.name}
+            if (decided := judged.get(spec.key)) is None:
+                continue
+            if decided.on is not None:
+                shown["verdict"] = decided.on
+            if spec.release is not None:
+                shown[ATTR_HELD] = decided.held
         self.hass.bus.async_fire(
             EVENT_DECISION,
             {

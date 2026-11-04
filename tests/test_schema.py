@@ -55,6 +55,12 @@ def asks(*names: str) -> list[dict[str, Any]]:
         ({"type": "noul", "low": False}, "put the word in quotes"),
         ({"type": "score", "criteria": [True, False]}, "put the word in quotes"),
         ({"type": "noul", "cutoff": 1.5}, "value must be at most 1"),
+        ({"type": "noul", "release": 0.3}, "so it needs 'cutoff:'"),
+        (
+            {"type": "noul", "cutoff": 0.6, "release": 0.7},
+            r"\(0.7\) cannot be over 'cutoff:' \(0.6\)",
+        ),
+        ({"type": "score", "criteria": ["cold", "hot"], "release": 0.4}, "apply to a noul only"),
         ({"type": "box"}, "value must be one of"),
     ],
 )
@@ -76,6 +82,8 @@ def test_question_schema_names_the_question() -> None:
     "fields",
     [
         {"type": "noul", "high": "Steam", "low": "Quiet", "cutoff": "0.25"},
+        {"type": "noul", "cutoff": 0.7, "release": 0.3},
+        {"type": "noul", "cutoff": 0.7, "release": 0.7},
         {"type": "choice", "criteria": {"boiling": "Steam", "off": None}},
         {"type": "score", "criteria": ["cold", {"warm": "hand hot"}, "boiling"]},
     ],

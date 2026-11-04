@@ -212,6 +212,7 @@ async def test_ask_answers_each_question_under_the_key_the_caller_gave(
     )
     assert answered["answers"]["cool"] == {"type": "noul", "noul": 0.12}
     assert answered["answers"]["jar"]["choice"] == "flour"
+    assert "verdict" not in answered["answers"]["jar"]
     assert answered["answers"]["leak"]["nearest_level"] == "Damp"
     assert answered["model"] == MODEL
     assert sorted(sent(fake_client)[1]) == ["cool", "jar", "leak"]
@@ -261,6 +262,27 @@ async def test_box_with_a_one_off_model_leaves_the_entry_model_alone(
             {"picture": "camera.back_porch", "instructions": "the cat", "model": "jev-1.16.0-rc1"},
         )
     assert loaded.runtime_data.model_version == "jev-1.15.0"
+
+
+@pytest.mark.parametrize(("noul", "verdict"), [(0.7, True), (0.69, False)])
+async def test_ask_gives_a_noul_with_a_cutoff_its_verdict(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock, noul: float, verdict: bool
+) -> None:
+    fake_client.ask.return_value = reply(cool=NoulAnswer(noul=noul))
+    answered = await act(
+        hass,
+        "ask",
+        {
+            "note": "Utility room at 07:10",
+            "questions": {"cool": {"type": "noul", "instructions": "Cool?", "cutoff": 0.7}},
+        },
+    )
+    assert answered["answers"]["cool"] == {
+        "type": "noul",
+        "noul": noul,
+        "verdict": verdict,
+        "cutoff": 0.7,
+    }
 
 
 async def test_ask_with_a_box_fetches_every_source_in_order_and_bills_pixels(
@@ -385,12 +407,41 @@ async def test_action_with_a_bad_field_is_refused_unsent(
         ({"a": {"type": "choice", "instructions": "Which?"}}, {}, "question_invalid"),
         ({"a": {"type": "box", "instructions": "the cat"}}, {}, "box_needs_image"),
         (
+            {"a": {"type": "noul", "instructions": "Cool?", "cutoff": 0.7, "release": 0.3}},
+            {},
+            "question_release",
+        ),
+        (
+            {
+                "a": {
+                    "type": "choice",
+                    "instructions": "Which?",
+                    "criteria": {"flour": None, "sugar": None},
+                    "cutoff": 0.5,
+                }
+            },
+            {},
+            "question_cutoff_noul_only",
+        ),
+        ({"a": {"type": "noul", "instructions": "Cool?", "cutoff": 1.5}}, {}, "question_invalid"),
+        (
             {"a": {"type": "noul", "instructions": "Cool?"}},
             {"window": {"duration": "00:10:00"}},
             "window_without_target",
         ),
     ],
-    ids=["no-instructions", "no-type", "one-criterion", "unknown-type", "no-options", "box", "win"],
+    ids=[
+        "no-instructions",
+        "no-type",
+        "one-criterion",
+        "unknown-type",
+        "no-options",
+        "box",
+        "release",
+        "cutoff-on-choice",
+        "cutoff-range",
+        "win",
+    ],
 )
 async def test_ask_with_a_question_it_cannot_send_names_the_key(
     hass: HomeAssistant,

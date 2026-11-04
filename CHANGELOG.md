@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- A noul's verdict can hold between two numbers. Give the question a `release`
+  under its `cutoff`, in YAML or as "Verdict turns off below" in the editor: the
+  verdict turns on at or over the cutoff, off under the release, and keeps its
+  last state in between, so an answer that wobbles around the cutoff no longer
+  flips it on every evaluation. The verdict sensor and `mentat_decision` say
+  `held` when it did. A question without a release behaves as before; nothing
+  needs changing.
+- `mentat.ask` takes a `cutoff` on a noul and returns its `verdict`, as
+  `mentat.noul` does. It used to ignore a `cutoff` it did not use, and now
+  refuses one on a choice or score, one outside 0 to 1, and any `release`. A call
+  that carried one of those stops with an error naming the question; remove the
+  key.
+- A score sensor carries `normalized`, the score over its top level, so scores
+  with scales of different lengths can be weighted together in a template.
+
 ## 0.1.0 (2026-11-01)
 
 The first release. Not dated until the release commit.

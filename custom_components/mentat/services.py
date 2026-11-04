@@ -81,6 +81,7 @@ from .const import (
     CONF_OPTIONS,
     CONF_PICTURE,
     CONF_PICTURES,
+    CONF_RELEASE,
     CONF_SCALE,
     CONF_WINDOW,
     CONF_WITH_ATTRIBUTES,
@@ -104,7 +105,7 @@ from .pictures import (
     is_path_source,
 )
 from .readings import async_state
-from .schema import ENTRY, WINDOW_SCHEMA, WORDING
+from .schema import ENTRY, PROBABILITY, WINDOW_SCHEMA, WORDING
 from .watches import answer_as_dict, options_from, question_from_mapping, window_from_mapping
 from .window import async_window_state_once
 
@@ -142,9 +143,7 @@ NOUL_SCHEMA = vol.Schema(
     | {
         vol.Optional(CONF_HIGH): WORDING,
         vol.Optional(CONF_LOW): WORDING,
-        vol.Optional(CONF_CUTOFF, default=0.5): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
-        ),
+        vol.Optional(CONF_CUTOFF, default=0.5): PROBABILITY,
     }
 )
 CHOICE_SCHEMA = vol.Schema(
@@ -550,14 +549,40 @@ def _listed_question(key: str, raw: Mapping[str, Any]) -> Question:
         raise _invalid("question_invalid", key=key, reason=str(err)) from err
 
 
+def _listed_cutoff(key: str, raw: Mapping[str, Any]) -> float | None:
+    """A noul's cutoff in a mentat.ask call, or None when it has none.
+
+    A release holds a verdict from one evaluation of a watch to the next, and
+    an action keeps nothing between calls, so it is refused rather than ignored.
+    """
+    if raw.get(CONF_RELEASE) is not None:
+        raise _invalid("question_release", key=key)
+    if raw.get(CONF_CUTOFF) is None:
+        return None
+    if raw[CONF_TYPE] != TYPE_NOUL:
+        raise _invalid("question_cutoff_noul_only", key=key)
+    try:
+        cutoff: float = PROBABILITY(raw[CONF_CUTOFF])
+    except vol.Invalid as err:
+        raise _invalid("question_invalid", key=key, reason=f"cutoff: {err}") from err
+    return cutoff
+
+
 async def _ask(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
-    questions = {key: _listed_question(key, raw) for key, raw in call.data[ATTR_QUESTIONS].items()}
+    listed: Mapping[str, Mapping[str, Any]] = call.data[ATTR_QUESTIONS]
+    questions = {key: _listed_question(key, raw) for key, raw in listed.items()}
+    cutoffs = {key: _listed_cutoff(key, raw) for key, raw in listed.items()}
     if not call.data[CONF_PICTURES]:
         for key, question in questions.items():
             if isinstance(question, Box):
                 raise _invalid("box_needs_image", key=key)
     response = await _send(hass, await _read_call(hass, call), questions)
-    answers = {key: answer_as_dict(answer) for key, answer in response.answers.items()}
+    answers: dict[str, Any] = {}
+    for key, answer in response.answers.items():
+        answers[key] = answer_as_dict(answer)
+        cutoff = cutoffs.get(key)
+        if cutoff is not None and isinstance(answer, NoulAnswer):
+            answers[key] |= {"verdict": answer.noul >= cutoff, "cutoff": cutoff}
     return {ATTR_ANSWERS: answers} | _receipt(response)
 
 
