@@ -48,7 +48,9 @@ Before calling work done, go through these and say which applied.
   change and when a window settles. The five actions are `mentat.noul`,
   `choice`, `score`, `ask` and `box`. The AI Task entity answers
   `ai_task.generate_data`. The editor's trial asks once before saving. The last
-  three reach the server through `services.async_ask`.
+  three reach the server through `services.async_ask`. `mentat.calibrate` reads
+  the recorder and sends nothing, so it is no request path, and its tests check
+  that nothing reaches the client.
 - **Dialects.** `TypeSafeClient` and `ClefClient` in `client.py` each build and
   measure their own body. Picture limits and token formulas for both live in
   `providers.py`.
@@ -133,7 +135,8 @@ Its output goes into `docs/measurements.md`.
 - `pictures.py`: fetches, turns, sizes, encodes and bills pictures per dialect.
 - `fields.py`: AI Task fields to questions, and answers back to field values.
 - `ai_task.py`: the AI Task entity.
-- `services.py`: the five actions, `async_ask` and the caller checks.
+- `services.py`: the six actions, `async_ask` and the caller checks.
+- `calibrate.py`: replays a noul's recorded history through its verdict. Sends nothing.
 - `preview.py`: the editor's trial page, as markdown.
 - `editor.py`: the question editor subentry flow.
 - `config_flow.py`: entry setup, reauth, reconfigure and options.

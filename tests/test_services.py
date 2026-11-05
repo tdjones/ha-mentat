@@ -605,12 +605,12 @@ async def test_action_with_two_entries_bills_only_the_one_named(
     assert (bench.runtime_data.ledger.requests, attic.runtime_data.ledger.requests) == (2, 1)
 
 
-async def test_registering_twice_keeps_the_five_actions(
+async def test_registering_twice_keeps_the_six_actions(
     hass: HomeAssistant, loaded: MockConfigEntry
 ) -> None:
     async_register_services(hass)
     actions = hass.services.async_services_for_domain(DOMAIN)
-    assert sorted(actions) == ["ask", "box", "choice", "noul", "score"]
+    assert sorted(actions) == ["ask", "box", "calibrate", "choice", "noul", "score"]
 
 
 # --- templates and who may send what ---

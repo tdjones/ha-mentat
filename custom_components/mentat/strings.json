@@ -256,6 +256,24 @@
     },
     "window_without_target": {
       "message": "A window logs changes to entities, so asking about one needs entities, devices, areas or labels picked as the target."
+    },
+    "calibrate_needs_recorder": {
+      "message": "Calibrating reads the recorder's history, and the recorder is not loaded."
+    },
+    "calibrate_recorder_failed": {
+      "message": "The recorder's history could not be read: {reason}"
+    },
+    "calibrate_not_probability": {
+      "message": "{sensor} has recorded values outside 0 to 1, so it is no probability to calibrate. Pick a noul's sensor."
+    },
+    "calibrate_no_history": {
+      "message": "The recorder has no stretch in the last {days} days where {sensor} held a probability and {truth} had a state. Check that both are recorded, or ask for more days."
+    },
+    "calibrate_never_true": {
+      "message": "{truth} was never {state} in the last {days} days, so there is no true time to measure {sensor} against. Ask for more days, or check the state it should be in when the answer is yes."
+    },
+    "calibrate_always_true": {
+      "message": "{truth} was {state} the whole of the last {days} days, so there is no false time to measure {sensor} against. Ask for more days, or check the state it should be in when the answer is yes."
     }
   },
   "issues": {
@@ -942,6 +960,28 @@
         "model": {
           "name": "Model",
           "description": "Optional. Asks this model instead of the entry's, for this call only."
+        }
+      }
+    },
+    "calibrate": {
+      "name": "Calibrate a noul",
+      "description": "Reads the recorder, sends nothing and costs no tokens. Replays a noul's history through its verdict against an entity that shows what was really true, and returns the cutoff and release that did best, with what they would have caught, missed and flipped.",
+      "fields": {
+        "sensor": {
+          "name": "Probability sensor",
+          "description": "A noul's sensor, whose state is the probability of yes."
+        },
+        "truth": {
+          "name": "Truth",
+          "description": "An entity whose state shows when the answer really was yes, such as a door contact or a plug's running sensor."
+        },
+        "truth_state": {
+          "name": "True state",
+          "description": "The truth entity's state that means yes. Every other state means no."
+        },
+        "days": {
+          "name": "Days",
+          "description": "How far back to read. The recorder keeps 10 days unless told otherwise, so more finds nothing older."
         }
       }
     }

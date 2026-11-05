@@ -1,8 +1,10 @@
-"""The five actions, and the one way every request reaches a server.
+"""The six actions, and the one way every request reaches a server.
 
 `mentat.noul`, `mentat.choice` and `mentat.score` ask one question each, which
 is as much as most automations need. `mentat.ask` sends several questions about
 one state in one request. `mentat.box` asks where something is in one picture.
+`mentat.calibrate` sends nothing: it reads the recorder and suggests a cutoff
+and a release for a noul.
 
 `async_ask` is the only place a request is sent from outside the coordinator.
 The actions, the editor's trial answer and the AI Task entity all call it. It
@@ -21,13 +23,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.auth.models import User
 from homeassistant.auth.permissions.const import POLICY_READ
-from homeassistant.const import CONF_MODEL, CONF_TYPE
+from homeassistant.const import ATTR_ENTITY_ID, CONF_MODEL, CONF_TYPE, STATE_ON
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -65,6 +68,13 @@ from jevclient import (
     ScoreAnswer,
 )
 
+from .calibrate import (
+    RecorderUnreadableError,
+    async_recorded_states,
+    calibration,
+    number,
+    pieces_of,
+)
 from .const import (
     ATTR_ANSWERS,
     ATTR_CONFIG_ENTRY,
@@ -73,6 +83,7 @@ from .const import (
     ATTR_USAGE,
     CONF_BRIEF,
     CONF_CUTOFF,
+    CONF_DAYS,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LOW,
@@ -83,12 +94,17 @@ from .const import (
     CONF_PICTURES,
     CONF_RELEASE,
     CONF_SCALE,
+    CONF_SENSOR,
+    CONF_TRUTH,
+    CONF_TRUTH_STATE,
     CONF_WINDOW,
     CONF_WITH_ATTRIBUTES,
+    DEFAULT_CALIBRATE_DAYS,
     DEFAULT_MAX_IMAGES,
     DOMAIN,
     SERVICE_ASK,
     SERVICE_BOX,
+    SERVICE_CALIBRATE,
     SERVICE_CHOICE,
     SERVICE_NOUL,
     SERVICE_SCORE,
@@ -175,6 +191,17 @@ ASK_SCHEMA = vol.Schema(
 )
 # One picture and no state: the edges are fractions of that picture alone.
 BOX_SCHEMA = vol.Schema(_ROUTING | _WORDED | {vol.Required(CONF_PICTURE): cv.string})
+# Nothing is sent, so no entry, no model and no budget.
+CALIBRATE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_SENSOR): cv.entity_id,
+        vol.Required(CONF_TRUTH): cv.entity_id,
+        vol.Optional(CONF_TRUTH_STATE, default=STATE_ON): cv.string,
+        vol.Optional(CONF_DAYS, default=DEFAULT_CALIBRATE_DAYS): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+    }
+)
 
 
 def _invalid(key: str, /, **placeholders: str) -> ServiceValidationError:
@@ -607,6 +634,45 @@ async def _box(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     return edges | {"width": width, "height": height} | _receipt(response)
 
 
+async def _calibrate(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """The cutoff and release that replay a noul's history best. Sends nothing.
+
+    A history says as much about an entity as its state does, so a user who may
+    not read either entity is refused before the recorder is read.
+    """
+    sensor: str = call.data[CONF_SENSOR]
+    truth: str = call.data[CONF_TRUTH]
+    truth_state: str = call.data[CONF_TRUTH_STATE]
+    days: int = call.data[CONF_DAYS]
+    _check_caller_may_read(hass, await _caller(hass, call), (), {ATTR_ENTITY_ID: [sensor, truth]})
+    if "recorder" not in hass.config.components:
+        raise _invalid("calibrate_needs_recorder")
+    end = dt_util.utcnow()
+    start = end - timedelta(days=days)
+    try:
+        found = await async_recorded_states(hass, start, end, [sensor, truth])
+    except RecorderUnreadableError as err:
+        raise _failed("calibrate_recorder_failed", reason=str(err)) from err
+    said = found[sensor]
+    probabilities = [
+        value for value in map(number, (state.state for state in said)) if value is not None
+    ]
+    placeholders = {"sensor": sensor, "truth": truth, "state": truth_state, "days": str(days)}
+    # A score or a count would give cutoffs that mean nothing.
+    if any(not 0 <= value <= 1 for value in probabilities):
+        raise _invalid("calibrate_not_probability", **placeholders)
+    pieces = pieces_of(said, found[truth], truth_state, start, end)
+    if not pieces:
+        raise _invalid("calibrate_no_history", **placeholders)
+    # With one side only there is nothing to separate, and every number scores alike.
+    if not any(piece.truth for piece in pieces):
+        raise _invalid("calibrate_never_true", **placeholders)
+    if all(piece.truth for piece in pieces):
+        raise _invalid("calibrate_always_true", **placeholders)
+    # A pass over the history per pair of numbers is too long for the event loop.
+    return await hass.async_add_executor_job(calibration, pieces, len(probabilities))
+
+
 type _Handler = Callable[[HomeAssistant, ServiceCall], Coroutine[Any, Any, ServiceResponse]]
 
 _ACTIONS: dict[str, tuple[_Handler, vol.Schema]] = {
@@ -615,6 +681,7 @@ _ACTIONS: dict[str, tuple[_Handler, vol.Schema]] = {
     SERVICE_SCORE: (_score, SCORE_SCHEMA),
     SERVICE_ASK: (_ask, ASK_SCHEMA),
     SERVICE_BOX: (_box, BOX_SCHEMA),
+    SERVICE_CALIBRATE: (_calibrate, CALIBRATE_SCHEMA),
 }
 
 

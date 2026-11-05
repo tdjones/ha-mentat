@@ -189,6 +189,17 @@ SERVICE_CHOICE: Final = "choice"
 SERVICE_SCORE: Final = "score"
 SERVICE_ASK: Final = "ask"
 SERVICE_BOX: Final = "box"
+SERVICE_CALIBRATE: Final = "calibrate"
+
+# mentat.calibrate's fields.
+CONF_SENSOR: Final = "sensor"
+CONF_TRUTH: Final = "truth"
+CONF_TRUTH_STATE: Final = "truth_state"
+CONF_DAYS: Final = "days"
+# The recorder keeps 10 days by default (its purge_keep_days), so a week is
+# inside what a default install still has. A longer stretch only reads further
+# back, and finds nothing past what the recorder kept.
+DEFAULT_CALIBRATE_DAYS: Final = 7
 # A list of names, or a mapping of name to description.
 CONF_OPTIONS: Final = "options"
 CONF_SCALE: Final = "scale"

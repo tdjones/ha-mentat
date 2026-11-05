@@ -253,3 +253,31 @@ box:
       example: jev-1.14.0
       selector:
         text:
+
+calibrate:
+  fields:
+    sensor:
+      required: true
+      example: sensor.mentat_load_waiting
+      selector:
+        entity:
+          domain: sensor
+    truth:
+      required: true
+      example: binary_sensor.washing_machine_running
+      selector:
+        entity:
+    truth_state:
+      required: false
+      default: "on"
+      example: "on"
+      selector:
+        text:
+    days:
+      required: false
+      default: 7
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: days

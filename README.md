@@ -34,7 +34,9 @@ answer that wobbles around 0.7 can turn it on and off on every evaluation. Give
 it a `release` below the cutoff and it holds between the two: on at or over the
 cutoff, off under the release, and whatever the last answer left it in between.
 TypeSafe's documentation suggests 0.7 for yes and 0.3 for no as a starting
-point; Mentat has not measured either. Nothing is held across a restart, as no answer is, so a first answer
+point; Mentat has not measured either. Once the recorder has a few days of a
+noul's answers, [mentat.calibrate](#mentatcalibrate) measures them against an
+entity that shows the truth and suggests both numbers for that house. Nothing is held across a restart, as no answer is, so a first answer
 inside the band leaves the verdict unknown until one lands outside it.
 
 ## Providers and dialects
@@ -482,8 +484,9 @@ Revising a question's entities, note, schedule or window changes its watch key.
 ## Actions
 
 Every action returns its answer as a response and needs `response_variable`.
-Each takes `config_entry` when more than one Mentat entry is loaded, and `model`
-to use another model for that one request.
+Each that asks the model takes `config_entry` when more than one Mentat entry is
+loaded, and `model` to use another model for that one request.
+`mentat.calibrate` asks nothing and takes neither.
 
 <img src="docs/images/action_response.png" alt="Developer tools running mentat.noul on the washing machine power sensor, with the response below" width="640">
 
@@ -615,6 +618,51 @@ the same picture, and read the noul first.
 after it has fetched and resized the picture. Jev models older than 1.14 refuse
 it with a 400; Mentat reports any 400 on a request with a box as a refused box
 question, so check the model if the message surprises you.
+
+### mentat.calibrate
+
+Picks a noul's `cutoff` and `release` from what really happened, instead of a
+guess. It reads the recorder: the noul sensor's history beside an entity whose
+state shows when the answer really was yes, such as a door contact or a smart
+plug's own running sensor. It replays the history through the verdict sensor's own
+rule, hold included, for each pair of numbers in steps of 0.05. Nothing is sent,
+so it costs no tokens and needs no budget.
+
+```yaml
+action: mentat.calibrate
+data:
+  sensor: sensor.mentat_load_waiting              # a noul's sensor
+  truth: binary_sensor.washing_machine_running    # shows what was really true
+  truth_state: "on"                               # the default
+  days: 7                                         # the default
+response_variable: fit
+```
+
+The response has:
+
+| Key | What it is |
+| --- | --- |
+| `cutoff`, `release` | The pair that replayed best, by F1 and then by fewest flips. When many tie, the middle of them, so an answer a little off its usual value lands on the same side. |
+| `precision`, `recall`, `f1` | How much of the time on was true, how much of the true time was on, and the balance of the two. |
+| `caught`, `missed` | How many separate stretches of true time the verdict turned on for, and how many it did not. |
+| `false_alarms` | How many times it turned on with nothing true behind it. |
+| `flips` | How many times it changed. |
+| `without_release` | The same numbers for that cutoff alone, to show what the release buys. |
+| `when_true`, `when_false` | The `low` and `high` of the probabilities that held for 80% of each side's time. |
+| `overlap` | True when those two ranges meet. No numbers can separate such answers, so reword the question before trusting any cutoff. |
+| `hours`, `hours_true`, `answers` | How much was measured. A result over two true stretches is noise, whatever it says. |
+
+The 0.05 steps and the 80% are choices nobody has measured. Time when the sensor
+held no number, such as unavailable while the server was down, is left out. True
+time under an unknown verdict counts as missed, because an unknown verdict
+triggers nothing. An answer lags the truth by up to the watch's schedule, and
+that lag counts against `precision` and `recall`, so read `caught`, `missed` and
+`false_alarms` first.
+
+It refuses a stretch with no time where both entities had a state, one where the
+truth was never or always in `truth_state`, a sensor that recorded anything
+outside 0 to 1, and a user who may not read either entity. The recorder keeps 10
+days by default, so asking for more finds nothing older.
 
 ## Pictures
 
@@ -767,7 +815,8 @@ first entry's provider and dialect, and whether its server answers.
 
 - A decision model answers questions. It writes no text, summary or reply.
 - Probabilities and confidences are not calibrated. Pick cutoffs by watching
-  real answers for a while.
+  real answers for a while, or let [mentat.calibrate](#mentatcalibrate) measure
+  a noul against an entity that shows the truth.
 - The model is poor at arithmetic and at comparing timestamps. Work out numbers,
   durations and counts in a Jinja template and send the result.
 - Do not let an answer unlock a door, disarm an alarm or do anything else where a

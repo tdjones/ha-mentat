@@ -294,7 +294,8 @@ class FakeRecorder:
 def mock_recorder(hass: HomeAssistant) -> Iterator[FakeRecorder]:
     """A recorder that answers from memory; the real one needs a database.
 
-    Request it after any fixture that loads an entry, so only the window sees it.
+    Request it after any fixture that loads an entry, so only the window and
+    mentat.calibrate see it.
     """
     fake = FakeRecorder()
     instance = MagicMock()
@@ -306,6 +307,7 @@ def mock_recorder(hass: HomeAssistant) -> Iterator[FakeRecorder]:
     hass.config.components.add("recorder")
     with (
         patch("custom_components.mentat.window.get_instance", return_value=instance),
+        patch("custom_components.mentat.calibrate.get_instance", return_value=instance),
         patch(
             "homeassistant.components.recorder.history.get_significant_states",
             side_effect=fake.query,
