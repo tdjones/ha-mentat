@@ -968,7 +968,7 @@
     },
     "calibrate": {
       "name": "Calibrate a noul",
-      "description": "Reads the recorder, sends nothing and costs no tokens. Replays a noul's history through its verdict against an entity that shows what was really true, and returns the cutoff and release that did best, with what they would have caught, missed and flipped.",
+      "description": "Reads the recorder, sends nothing and costs no tokens. Replays a noul's history through its verdict against an entity that shows what was really true, and returns the calmest cutoff and release that scored close to the best, with what they would have caught, missed and flipped.",
       "fields": {
         "sensor": {
           "name": "Probability sensor",
@@ -985,6 +985,10 @@
         "days": {
           "name": "Days",
           "description": "How far back to read, up to 90. The recorder keeps 10 days unless told otherwise, so more finds nothing older."
+        },
+        "grace": {
+          "name": "Grace",
+          "description": "Seconds the truth counts as still holding after it ended, because an answer comes after what it describes. Set it to about the watch's schedule. A longer grace also joins short pulses, such as a motion sensor's, into one visit."
         }
       }
     }

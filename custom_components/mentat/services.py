@@ -84,6 +84,7 @@ from .const import (
     CONF_BRIEF,
     CONF_CUTOFF,
     CONF_DAYS,
+    CONF_GRACE,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LOW,
@@ -101,9 +102,11 @@ from .const import (
     CONF_WITH_ATTRIBUTES,
     DEFAULT_CALIBRATE_DAYS,
     DEFAULT_MAX_IMAGES,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     MAX_CALIBRATE_CHANGES,
     MAX_CALIBRATE_DAYS,
+    MAX_SCAN_INTERVAL_SECONDS,
     SERVICE_ASK,
     SERVICE_BOX,
     SERVICE_CALIBRATE,
@@ -201,6 +204,9 @@ CALIBRATE_SCHEMA = vol.Schema(
         vol.Optional(CONF_TRUTH_STATE, default=STATE_ON): cv.string,
         vol.Optional(CONF_DAYS, default=DEFAULT_CALIBRATE_DAYS): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=MAX_CALIBRATE_DAYS)
+        ),
+        vol.Optional(CONF_GRACE, default=DEFAULT_SCAN_INTERVAL_SECONDS): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=MAX_SCAN_INTERVAL_SECONDS)
         ),
     }
 )
@@ -675,7 +681,8 @@ async def _calibrate(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     # A score or a count would give cutoffs that mean nothing.
     if any(not 0 <= value <= 1 for value in probabilities):
         raise _invalid("calibrate_not_probability", **placeholders)
-    pieces = pieces_of(said, found[truth], truth_state, start, end)
+    grace = timedelta(seconds=call.data[CONF_GRACE])
+    pieces = pieces_of(said, found[truth], truth_state, start, end, grace)
     if not pieces:
         raise _invalid("calibrate_no_history", **placeholders)
     # With one side only there is nothing to separate, and every number scores alike.

@@ -15,7 +15,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
 from sqlalchemy.exc import OperationalError
 
-from custom_components.mentat.calibrate import Piece, pieces_of, replay
+from custom_components.mentat.calibrate import Piece, best_replay, pieces_of, replay
 from custom_components.mentat.const import DOMAIN, MAX_CALIBRATE_CHANGES, MAX_CALIBRATE_DAYS
 
 from .conftest import FakeRecorder
@@ -46,7 +46,7 @@ async def calibrate(hass: HomeAssistant, user_id: str | None = None, **data: Any
     response: dict[str, Any] = await hass.services.async_call(
         DOMAIN,
         "calibrate",
-        {"sensor": NOUL, "truth": TRUTH, "days": 1, **data},
+        {"sensor": NOUL, "truth": TRUTH, "days": 1, "grace": 0, **data},
         blocking=True,
         return_response=True,
         context=Context(user_id=user_id),
@@ -201,12 +201,91 @@ def test_pieces_count_from_the_start_and_leave_out_a_sensor_with_no_number() -> 
         "on",
         START,
         hours(4),
+        timedelta(),
     )
     assert pieces == [
         Piece(0.4, False, 3600.0),
         Piece(0.4, True, 3600.0),
         Piece(0.6, True, 3600.0),
     ]
+
+
+def test_grace_keeps_the_truth_holding_and_joins_pulses_into_one_spell() -> None:
+    pieces = pieces_of(
+        states(NOUL, (-1, "0.4")),
+        states(TRUTH, (-1, "off"), (1, "on"), (1.1, "off"), (1.2, "on"), (1.3, "off")),
+        "on",
+        START,
+        hours(3),
+        timedelta(minutes=30),
+    )
+    assert [(piece.truth, round(piece.seconds)) for piece in pieces] == [
+        (False, 3600),
+        (True, 360),
+        (True, 360),
+        (True, 360),
+        (True, 1800),
+        (False, 4320),
+    ]
+
+
+def test_grace_ends_with_the_stretch_measured() -> None:
+    pieces = pieces_of(
+        states(NOUL, (-1, "0.4")),
+        states(TRUTH, (-1, "off"), (1, "on"), (1.9, "off")),
+        "on",
+        START,
+        hours(2),
+        timedelta(hours=1),
+    )
+    assert sum(piece.seconds for piece in pieces if piece.truth) == 3600.0
+
+
+@pytest.mark.parametrize(
+    ("grace", "tally"),
+    [(timedelta(), (0, 1, 1)), (timedelta(minutes=15), (1, 0, 0))],
+    ids=["none", "fifteen-minutes"],
+)
+def test_grace_turns_a_late_answer_from_a_miss_and_an_alarm_into_a_catch(
+    grace: timedelta, tally: tuple[int, int, int]
+) -> None:
+    # A two minute event, answered ten minutes after it ended.
+    pieces = pieces_of(
+        states(NOUL, (-1, "0.1"), (6.2, "0.9"), (6.4, "0.1")),
+        states(TRUTH, (-1, "off"), (6, "on"), (6.03, "off")),
+        "on",
+        START,
+        hours(12),
+        grace,
+    )
+    run = replay(pieces, 0.7, 0.3)
+    assert (run.caught, run.missed, run.false_alarms) == tally
+
+
+async def test_calibrate_passes_its_grace_to_the_replay(
+    hass: HomeAssistant, recorded: FakeRecorder
+) -> None:
+    fit = await calibrate(hass, grace=1800)
+    assert fit["hours_true"] == 5.0
+
+
+def test_best_replay_gives_up_a_little_f1_for_a_calm_verdict() -> None:
+    # False time reaches 0.5, so the cutoff must clear it, and true time dips to
+    # 0.4 under any cutoff that does. Only a release rides out the dips.
+    pieces = [
+        *wobble(*[0.1, 0.5] * 20),
+        *wobble(0.72, 0.4, 0.72, 0.4, 0.72, truth=True),
+        *wobble(*[0.1] * 20),
+    ]
+    chosen = best_replay(pieces)
+    assert chosen.release < chosen.cutoff
+    assert chosen.flips == 2
+    assert replay(pieces, chosen.cutoff, chosen.cutoff).flips > 2
+
+
+def test_best_replay_never_takes_a_verdict_that_stays_off_for_being_calm() -> None:
+    chosen = best_replay([*wobble(0.1), *wobble(0.3, truth=True), *wobble(0.1)])
+    assert chosen.caught == 1
 
 
 def wobble(*probabilities: float, truth: bool = False) -> list[Piece]:

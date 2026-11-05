@@ -141,6 +141,8 @@ measured at two sizes, and so is the TypeSafe column, to within 2 tokens.
 | `MAX_WINDOW_EVENTS` | 500 | A log row is shorter than an entity record, so 500 rows stay under the entity cap's bill. |
 | `MIN_WINDOW_SECONDS`, `MAX_WINDOW_SECONDS` | 60, 86,400 | Planning notes, 2026-10-30. |
 | `REQUEST_TIMEOUT_SECONDS` | 30 | jevclient's `DEFAULT_TIMEOUT`, used for both dialects. |
+| `_CALM_MARGIN` | 0.9 | `mentat.calibrate` takes the calmest pair within 10% of the best F1. Relative, so a verdict that is never on cannot win. |
+| Default `grace` | 300 s | `DEFAULT_SCAN_INTERVAL_SECONDS`, the most a watch on the default schedule lags. |
 | `MAX_CALIBRATE_DAYS` | 90 | Bounds the recorder read of one `mentat.calibrate` call. Nine times what a default recorder keeps. |
 | `MAX_CALIBRATE_CHANGES` | 50,000 | Bounds its 190 passes over the history. A noul asked every minute for a month is about 43,000. |
 | Brief folded into instructions | | `watches.fold_brief` assumes the model weighs a rule in the question more than one in the readings. Nobody has measured it. |

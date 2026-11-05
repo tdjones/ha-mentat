@@ -17,9 +17,10 @@
 - `mentat.calibrate` suggests a noul's `cutoff` and `release` from the
   recorder. Give it the noul's sensor and an entity that shows what was really
   true, such as a door contact. It replays the history through the verdict and
-  returns the numbers that did best, what they would have caught, missed and
-  flipped, and whether the answers overlap so much that the question needs
-  rewording. It sends nothing and costs no tokens.
+  returns the calmest numbers that scored close to the best, what they would have
+  caught, missed and flipped, and whether the answers overlap so much that nothing
+  separates them. A `grace` allows for answers coming after what they describe. It
+  sends nothing and costs no tokens.
 - A score sensor carries `normalized`, the score over its top level, so scores
   with scales of different lengths can be weighted together in a template.
 

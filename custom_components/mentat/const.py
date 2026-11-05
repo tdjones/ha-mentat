@@ -196,6 +196,7 @@ CONF_SENSOR: Final = "sensor"
 CONF_TRUTH: Final = "truth"
 CONF_TRUTH_STATE: Final = "truth_state"
 CONF_DAYS: Final = "days"
+CONF_GRACE: Final = "grace"
 # The recorder keeps 10 days by default (its purge_keep_days), so a week is
 # inside what a default install still has. A longer stretch only reads further
 # back, and finds nothing past what the recorder kept.

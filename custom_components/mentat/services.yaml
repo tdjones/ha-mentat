@@ -282,3 +282,12 @@ calibrate:
           max: 90
           mode: box
           unit_of_measurement: days
+    grace:
+      required: false
+      default: 300
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+          unit_of_measurement: s

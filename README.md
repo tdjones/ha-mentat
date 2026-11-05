@@ -635,6 +635,7 @@ data:
   truth: binary_sensor.washing_machine_running    # shows what was really true
   truth_state: "on"                               # the default
   days: 7                                         # the default
+  grace: 300                                      # seconds, the default
 response_variable: fit
 ```
 
@@ -642,22 +643,27 @@ The response has:
 
 | Key | What it is |
 | --- | --- |
-| `cutoff`, `release` | The pair that replayed best, by F1 and then by fewest flips. When many tie, the middle of them, so an answer a little off its usual value lands on the same side. |
+| `cutoff`, `release` | The pair with the fewest flips among those within 10% of the best F1. When many tie, the middle of them, so an answer a little off its usual value lands on the same side. |
 | `precision`, `recall`, `f1` | How much of the time on was true, how much of the true time was on, and the balance of the two. |
 | `caught`, `missed` | How many separate stretches of true time the verdict turned on for, and how many it did not. |
 | `false_alarms` | How many times it turned on with nothing true behind it. |
 | `flips` | How many times it changed. |
 | `without_release` | The same numbers for that cutoff alone, to show what the release buys. |
 | `when_true`, `when_false` | The `low` and `high` of the probabilities that held for 80% of each side's time. |
-| `overlap` | True when those two ranges meet. No numbers can separate such answers, so reword the question before trusting any cutoff. |
+| `overlap` | True when those two ranges meet, so no numbers separate the answers. Either the question needs rewording or the truth entity does not mean what the question asks. Check the truth first: a sensor that is on for seconds at a time rarely does. |
 | `hours`, `hours_true`, `answers` | How much was measured. A result over two true stretches is noise, whatever it says. |
 
-The 0.05 steps and the 80% are choices nobody has measured. Time when the sensor
-held no number, such as unavailable while the server was down, is left out. True
-time under an unknown verdict counts as missed, because an unknown verdict
-triggers nothing. An answer lags the truth by up to the watch's schedule, and
-that lag counts against `precision` and `recall`, so read `caught`, `missed` and
-`false_alarms` first.
+An answer comes after what it describes, by up to the watch's schedule, so the
+truth counts as still holding for `grace` seconds after it ended, and `hours_true`
+includes that time. Set it to about the watch's schedule. A longer grace also joins
+short pulses into one visit: `grace: 600` makes a person sensor mean "someone was
+here in the last 10 minutes". If the noul reads the truth entity itself, the result
+shows how well the two agree, not whether either is right.
+
+The 0.05 steps, the 10%, the 80% and the 300 second default are choices nobody has
+measured. Time when the sensor held no number, such as unavailable while the
+server was down, is left out. True time under an unknown verdict counts as missed,
+because an unknown verdict triggers nothing.
 
 It refuses a stretch with no time where both entities had a state, one where the
 truth was never or always in `truth_state`, a sensor that recorded anything

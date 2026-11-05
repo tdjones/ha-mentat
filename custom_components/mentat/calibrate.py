@@ -18,7 +18,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from itertools import pairwise
 from typing import Any, Final
@@ -31,6 +31,11 @@ from .judge import side
 # The numbers tried, in twentieths. A choice nobody has measured: a person tunes no
 # finer, and each pair costs a pass over the whole history.
 _GRID: Final = tuple(step / 20 for step in range(1, 20))
+
+# How far a pair's F1 may fall short of the best and still compete on calm, as a
+# share of the best. Relative, so a verdict that is never on cannot win on calm
+# when the best F1 is low. A choice nobody has measured.
+_CALM_MARGIN: Final = 0.9
 
 # How much of a side's time its band leaves out at each end, so one stray answer
 # does not stretch the band over the other side. A choice nobody has measured.
@@ -60,31 +65,57 @@ def _value_at(times: list[datetime], values: list[str], when: datetime) -> str |
     return values[index - 1] if index else None
 
 
+def _true_spells(
+    real: list[tuple[datetime, str]], truth_state: str, end: datetime, grace: timedelta
+) -> list[tuple[datetime, datetime]]:
+    """When the truth held, each spell stretched by the grace and joined to the next."""
+    spells: list[tuple[datetime, datetime]] = []
+    finishes = [when for when, _ in real[1:]] + [end]
+    for (begin, value), finish in zip(real, finishes, strict=True):
+        if value != truth_state:
+            continue
+        until = min(finish + grace, end)
+        if spells and begin <= spells[-1][1]:
+            spells[-1] = (spells[-1][0], max(spells[-1][1], until))
+        else:
+            spells.append((begin, until))
+    return spells
+
+
 def pieces_of(
     probabilities: Sequence[State],
     truths: Sequence[State],
     truth_state: str,
     start: datetime,
     end: datetime,
+    grace: timedelta,
 ) -> list[Piece]:
     """The time from start to end, cut wherever either entity changed.
 
     A state from before the start holds from the start. Time when the sensor held
     no number, such as unavailable during an outage, is left out, because no
     verdict was given then.
+
+    An answer comes after what it describes, by up to the watch's schedule, so the
+    truth counts as still holding for `grace` after it ended. Without that, a
+    10 second event answered a minute later scores a miss and a false alarm.
     """
     said = sorted((max(state.last_changed, start), state.state) for state in probabilities)
     real = sorted((max(state.last_changed, start), state.state) for state in truths)
     said_times, said_values = [when for when, _ in said], [value for _, value in said]
     real_times, real_values = [when for when, _ in real], [value for _, value in real]
+    spells = _true_spells(real, truth_state, end, grace)
+    spell_starts = [begin for begin, _ in spells]
     pieces: list[Piece] = []
-    for begin, finish in pairwise(sorted({*said_times, *real_times, end})):
+    cuts = {*said_times, *real_times, *(finish for _, finish in spells), end}
+    for begin, finish in pairwise(sorted(cuts)):
         reading = _value_at(said_times, said_values, begin)
-        actual = _value_at(real_times, real_values, begin)
         probability = None if reading is None else number(reading)
-        if probability is not None and actual is not None:
-            seconds = (finish - begin).total_seconds()
-            pieces.append(Piece(probability, actual == truth_state, seconds))
+        if probability is None or _value_at(real_times, real_values, begin) is None:
+            continue
+        spell = bisect_right(spell_starts, begin) - 1
+        truth = spell >= 0 and begin < spells[spell][1]
+        pieces.append(Piece(probability, truth, (finish - begin).total_seconds()))
     return pieces
 
 
@@ -189,11 +220,12 @@ def replay(pieces: Sequence[Piece], cutoff: float, release: float) -> Replay:
 
 
 def best_replay(pieces: Sequence[Piece]) -> Replay:
-    """The pair with the best F1, and of those the fewest flips.
+    """The calmest pair whose F1 is close to the best.
 
-    Many pairs usually tie, because no probability fell between them. The middle
-    of the ties is taken, not an edge, so an answer a little off its usual value
-    still lands on the same side.
+    A verdict that flips all day is what a release is for, so a pair that scores a
+    little lower and flips far less is the better one. Many pairs usually tie,
+    because no probability fell between them. The middle of the ties is taken, not
+    an edge, so an answer a little off its usual value still lands on the same side.
     """
     tried = [
         replay(pieces, cutoff, release)
@@ -201,10 +233,10 @@ def best_replay(pieces: Sequence[Piece]) -> Replay:
         for release in _GRID
         if release <= cutoff
     ]
-    top = max(round(each.f1, 2) for each in tried)
-    level = [each for each in tried if round(each.f1, 2) == top]
-    calmest = min(each.flips for each in level)
-    tied = [each for each in level if each.flips == calmest]
+    enough = max(each.f1 for each in tried) * _CALM_MARGIN
+    close = [each for each in tried if each.f1 >= enough]
+    calmest = min(each.flips for each in close)
+    tied = [each for each in close if each.flips == calmest]
     cutoff = _middle([each.cutoff for each in tied])
     release = _middle([each.release for each in tied if each.cutoff == cutoff])
     return replay(pieces, cutoff, release)
