@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+import voluptuous as vol
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import Context, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -15,7 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUs
 from sqlalchemy.exc import OperationalError
 
 from custom_components.mentat.calibrate import Piece, pieces_of, replay
-from custom_components.mentat.const import DOMAIN
+from custom_components.mentat.const import DOMAIN, MAX_CALIBRATE_CHANGES, MAX_CALIBRATE_DAYS
 
 from .conftest import FakeRecorder
 
@@ -135,14 +136,47 @@ async def test_calibrate_without_the_recorder_says_so(
     assert recorded.calls == []
 
 
-async def test_calibrate_with_an_unreadable_recorder_says_why(
-    hass: HomeAssistant, recorded: FakeRecorder
+async def test_calibrate_with_an_unreadable_recorder_keeps_the_reason_in_the_log(
+    hass: HomeAssistant, recorded: FakeRecorder, caplog: pytest.LogCaptureFixture
 ) -> None:
-    recorded.error = OperationalError("SELECT", {}, Exception("database is locked"))
+    recorded.error = OperationalError("SELECT secret", {}, Exception("database is locked"))
     with pytest.raises(HomeAssistantError) as caught:
         await calibrate(hass)
     assert caught.value.translation_key == "calibrate_recorder_failed"
-    assert "database is locked" in caught.value.translation_placeholders["reason"]
+    assert not caught.value.translation_placeholders
+    assert "database is locked" in caplog.text
+
+
+async def test_calibrate_refuses_a_group_hidden_from_the_user_though_its_members_are_not(
+    hass: HomeAssistant, recorded: FakeRecorder
+) -> None:
+    hass.states.async_set("group.private", "on", {"entity_id": [NOUL]})
+    user = MockUser().add_to_hass(hass)
+    user.mock_policy({"entities": {"entity_ids": {NOUL: True}}})
+    with pytest.raises(ServiceValidationError) as caught:
+        await calibrate(hass, user.id, truth="group.private")
+    assert caught.value.translation_key == "entity_not_permitted"
+    assert caught.value.translation_placeholders == {"entity_id": "group.private"}
+    assert recorded.calls == []
+
+
+async def test_calibrate_refuses_more_days_than_it_reads(
+    hass: HomeAssistant, recorded: FakeRecorder
+) -> None:
+    with pytest.raises(vol.Invalid):
+        await calibrate(hass, days=MAX_CALIBRATE_DAYS + 1)
+    assert recorded.calls == []
+
+
+async def test_calibrate_refuses_a_history_too_long_to_replay(
+    hass: HomeAssistant, recorded: FakeRecorder
+) -> None:
+    changes = [(index / 1000, "0.5") for index in range(MAX_CALIBRATE_CHANGES + 1)]
+    recorded.history[NOUL] = states(NOUL, *changes)
+    with pytest.raises(ServiceValidationError) as caught:
+        await calibrate(hass)
+    assert caught.value.translation_key == "calibrate_too_long"
+    assert caught.value.translation_placeholders["limit"] == str(MAX_CALIBRATE_CHANGES)
 
 
 async def test_calibrate_refuses_a_user_who_may_not_read_the_truth_before_reading_history(

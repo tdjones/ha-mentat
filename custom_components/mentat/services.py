@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.auth.models import User
 from homeassistant.auth.permissions.const import POLICY_READ
-from homeassistant.const import ATTR_ENTITY_ID, CONF_MODEL, CONF_TYPE, STATE_ON
+from homeassistant.const import CONF_MODEL, CONF_TYPE, STATE_ON
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -102,6 +102,8 @@ from .const import (
     DEFAULT_CALIBRATE_DAYS,
     DEFAULT_MAX_IMAGES,
     DOMAIN,
+    MAX_CALIBRATE_CHANGES,
+    MAX_CALIBRATE_DAYS,
     SERVICE_ASK,
     SERVICE_BOX,
     SERVICE_CALIBRATE,
@@ -198,7 +200,7 @@ CALIBRATE_SCHEMA = vol.Schema(
         vol.Required(CONF_TRUTH): cv.entity_id,
         vol.Optional(CONF_TRUTH_STATE, default=STATE_ON): cv.string,
         vol.Optional(CONF_DAYS, default=DEFAULT_CALIBRATE_DAYS): vol.All(
-            vol.Coerce(int), vol.Range(min=1)
+            vol.Coerce(int), vol.Range(min=1, max=MAX_CALIBRATE_DAYS)
         ),
     }
 )
@@ -377,8 +379,10 @@ def _check_caller_may_read(
     caller: _Caller,
     sources: Iterable[str],
     selector: Mapping[str, Any] | None = None,
+    *,
+    entities: Iterable[str] = (),
 ) -> None:
-    """Refuse a source or a target the user behind the call may not read.
+    """Refuse a source, a target or an entity the user behind the call may not read.
 
     Whatever is fetched goes to the model and comes back as an answer about it,
     so a picture from a camera a user cannot see, or the state of an entity
@@ -388,6 +392,8 @@ def _check_caller_may_read(
 
     The target is resolved the way the state and the window resolve it, groups
     expanded, and checked before anything is read from it or the recorder.
+    `entities` are checked as written: their own history is what gets read, and
+    expanding a group would check its members and never the group.
     """
     if caller.unlimited:
         return
@@ -401,6 +407,8 @@ def _check_caller_may_read(
                 translation_placeholders={"entity_id": entity_id},
             )
 
+    for entity_id in entities:
+        refuse_entity(entity_id)
     for source in sources:
         if is_path_source(source):
             raise ServiceValidationError(
@@ -644,7 +652,7 @@ async def _calibrate(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     truth: str = call.data[CONF_TRUTH]
     truth_state: str = call.data[CONF_TRUTH_STATE]
     days: int = call.data[CONF_DAYS]
-    _check_caller_may_read(hass, await _caller(hass, call), (), {ATTR_ENTITY_ID: [sensor, truth]})
+    _check_caller_may_read(hass, await _caller(hass, call), (), entities=(sensor, truth))
     if "recorder" not in hass.config.components:
         raise _invalid("calibrate_needs_recorder")
     end = dt_util.utcnow()
@@ -652,8 +660,14 @@ async def _calibrate(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     try:
         found = await async_recorded_states(hass, start, end, [sensor, truth])
     except RecorderUnreadableError as err:
-        raise _failed("calibrate_recorder_failed", reason=str(err)) from err
+        # A database error quotes its SQL, which is for the log and not for a caller.
+        _LOGGER.warning("mentat.calibrate could not read the recorder: %s", err)
+        raise _failed("calibrate_recorder_failed") from err
     said = found[sensor]
+    if len(said) + len(found[truth]) > MAX_CALIBRATE_CHANGES:
+        raise _invalid(
+            "calibrate_too_long", sensor=sensor, truth=truth, limit=str(MAX_CALIBRATE_CHANGES)
+        )
     probabilities = [
         value for value in map(number, (state.state for state in said)) if value is not None
     ]

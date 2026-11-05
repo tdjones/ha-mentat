@@ -200,6 +200,12 @@ CONF_DAYS: Final = "days"
 # inside what a default install still has. A longer stretch only reads further
 # back, and finds nothing past what the recorder kept.
 DEFAULT_CALIBRATE_DAYS: Final = 7
+# Both bound the work one call can ask for, a read and then 190 passes over the
+# history. Choices nobody has measured (docs/measurements.md): 90 days is nine
+# times what a default recorder keeps, and 50,000 changes covers a noul asked
+# every minute for a month.
+MAX_CALIBRATE_DAYS: Final = 90
+MAX_CALIBRATE_CHANGES: Final = 50_000
 # A list of names, or a mapping of name to description.
 CONF_OPTIONS: Final = "options"
 CONF_SCALE: Final = "scale"

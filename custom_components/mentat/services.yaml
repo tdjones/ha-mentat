@@ -279,5 +279,6 @@ calibrate:
       selector:
         number:
           min: 1
+          max: 90
           mode: box
           unit_of_measurement: days

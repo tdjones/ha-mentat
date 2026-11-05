@@ -661,8 +661,10 @@ that lag counts against `precision` and `recall`, so read `caught`, `missed` and
 
 It refuses a stretch with no time where both entities had a state, one where the
 truth was never or always in `truth_state`, a sensor that recorded anything
-outside 0 to 1, and a user who may not read either entity. The recorder keeps 10
-days by default, so asking for more finds nothing older.
+outside 0 to 1, a user who may not read either entity, and a stretch of more than
+50,000 changes. `days` goes up to 90, and the recorder keeps 10 by default, so
+asking for more than it kept finds nothing older. Both limits are choices nobody
+has measured.
 
 ## Pictures
 
