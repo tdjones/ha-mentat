@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import SOURCE_REAUTH
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -254,6 +254,55 @@ async def test_coordinator_change_during_a_scheduled_evaluation_is_kept(
     held.release.set()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert (held.asked, held.peak) == (3, 1)
+
+
+async def start_home_assistant(hass: HomeAssistant) -> None:
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def test_coordinator_asks_nothing_until_home_assistant_has_started(
+    hass: HomeAssistant, fake_client: MagicMock, yaml_watch: LoadYaml
+) -> None:
+    hass.set_state(CoreState.not_running)
+    try:
+        await yaml_watch()
+        assert asked(fake_client) == 0
+        assert hass.states.get(FORGOTTEN).state == "unavailable"
+        # An entity loading late is a change like any other.
+        hass.states.async_set(WASHER, "110")
+        await advance(hass, 5)
+        assert asked(fake_client) == 0
+    finally:
+        await start_home_assistant(hass)
+    assert asked(fake_client) == 1
+    assert hass.states.get(FORGOTTEN).state == "0.81"
+
+
+async def test_coordinator_unloaded_before_the_start_never_asks(
+    hass: HomeAssistant, fake_client: MagicMock, yaml_watch: LoadYaml
+) -> None:
+    hass.set_state(CoreState.not_running)
+    try:
+        entry = await yaml_watch()
+        await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        await start_home_assistant(hass)
+    assert asked(fake_client) == 0
+
+
+async def test_coordinator_nobody_reads_is_not_asked_at_the_start(
+    hass: HomeAssistant, fake_client: MagicMock, yaml_watch: LoadYaml
+) -> None:
+    hass.set_state(CoreState.not_running)
+    try:
+        entry = await yaml_watch([{**WATCH, "fire_event": False}])
+        with patch.object(laundry(entry), "nobody_reads", return_value=True):
+            await start_home_assistant(hass)
+    finally:
+        hass.set_state(CoreState.running)
+    assert asked(fake_client) == 0
 
 
 async def test_coordinator_stopping_home_assistant_skips_the_tick(

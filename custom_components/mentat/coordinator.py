@@ -18,6 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
+    CoreState,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -31,6 +32,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.target import (
     TargetStateChangedData,
     async_track_target_selector_state_change_event,
@@ -194,6 +196,8 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
         # flag, and any number of them make one more evaluation after it.
         self._evaluating = False
         self._evaluate_again = False
+        # True from setup until Home Assistant has started, while nothing is asked.
+        self._waiting_for_start = False
 
     @property
     def window_span(self) -> WindowSpan | None:
@@ -209,6 +213,8 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
         requests that arrive during one are folded into a single evaluation
         after it rather than lost or run once each.
         """
+        if self._waiting_for_start:
+            return
         if self._evaluating:
             self._evaluate_again = True
             return
@@ -220,6 +226,27 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
                 await self.async_refresh()
         finally:
             self._evaluating = False
+
+    async def async_first_evaluation(self) -> None:
+        """Ask for the first time, now or once Home Assistant has started.
+
+        While it starts, other integrations are still adding their entities. A
+        watch asked then is refused for having nothing to read, or worse, is
+        billed for an answer about the part of the house that has loaded so far.
+        So nothing wakes it until then, and the entities wait unavailable.
+        """
+        if self.hass.state is CoreState.running:
+            if not self.nobody_reads():
+                await self.async_request_evaluation()
+            return
+        self._waiting_for_start = True
+        self._stops.append(async_at_started(self.hass, self._started))
+
+    @callback
+    def _started(self, _hass: HomeAssistant) -> None:
+        self._waiting_for_start = False
+        if not self.nobody_reads():
+            self.async_schedule_evaluation()
 
     @callback
     def async_schedule_evaluation(self) -> None:

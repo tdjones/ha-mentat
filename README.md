@@ -36,8 +36,9 @@ cutoff, off under the release, and whatever the last answer left it in between.
 TypeSafe's documentation suggests 0.7 for yes and 0.3 for no as a starting
 point; Mentat has not measured either. Once the recorder has a few days of a
 noul's answers, [mentat.calibrate](#mentatcalibrate) measures them against an
-entity that shows the truth and suggests both numbers for that house. Nothing is held across a restart, as no answer is, so a first answer
-inside the band leaves the verdict unknown until one lands outside it.
+entity that shows the truth and suggests both numbers for that house. Nothing is
+held across a restart, as no answer is, so a first answer inside the band leaves
+the verdict unknown until one lands outside it.
 
 ## Providers and dialects
 
@@ -413,8 +414,10 @@ shows a stale or made-up value. It goes unavailable when:
 - the request failed or was refused, for example over budget;
 - the reply had no answer under its key, or an answer of the wrong type;
 - a choice came back with an option it does not list;
-- Home Assistant has just started and the watch has not answered yet. Mentat does
-  not restore an old answer after a restart.
+- Home Assistant is still starting, or has started and the watch has not answered
+  yet. A watch asks nothing until Home Assistant has started, because other
+  integrations are still adding the entities it reads. Mentat does not restore an
+  old answer after a restart.
 
 A verdict whose first answer since a restart lands between release and cutoff
 reads unknown rather than unavailable: its probability sensor has an answer, and

@@ -21,6 +21,11 @@
   caught, missed and flipped, and whether the answers overlap so much that nothing
   separates them. A `grace` allows for answers coming after what they describe. It
   sends nothing and costs no tokens.
+- A watch asks nothing until Home Assistant has started. It used to ask while other
+  integrations were still loading, which logged an error for a watch whose entities
+  had no state yet and billed an answer about part of the house for one whose
+  entities had partly loaded. Question sensors stay unavailable a little longer
+  after a restart.
 - A score sensor carries `normalized`, the score over its top level, so scores
   with scales of different lengths can be weighted together in a template.
 

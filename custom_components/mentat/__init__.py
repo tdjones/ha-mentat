@@ -219,7 +219,7 @@ async def _async_probe(runtime: MentatRuntimeData) -> None:
 
 
 async def _async_start_watch(coordinator: MentatCoordinator) -> None:
-    """Start the watch's triggers, and ask once if anything reads it.
+    """Start the watch's triggers, and have it ask once if anything reads it.
 
     Triggers come first: a window watch's first evaluation reads the log that
     starting them fills from the recorder. The first evaluation is not
@@ -229,8 +229,7 @@ async def _async_start_watch(coordinator: MentatCoordinator) -> None:
     unavailable instead. A refused key still starts reauth from inside it.
     """
     await coordinator.async_setup_triggers()
-    if not coordinator.nobody_reads():
-        await coordinator.async_request_evaluation()
+    await coordinator.async_first_evaluation()
 
 
 async def _async_start_watches(hass: HomeAssistant, entry: MentatConfigEntry) -> None:
