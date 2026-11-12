@@ -16,7 +16,8 @@
 # entities for yours. The household here is two adults, Alice and Bob, and a
 # teenager, Carol, whose phone counts for bedtime only when no adult is home.
 #
-# The watch makes sensor.<entry>_house_mode with one of six modes, and
+# The watch makes sensor.<entry>_house_mode with one of six modes, or other when
+# the model is not sure, and
 # sensor.<entry>_everyone_in_bed and sensor.<entry>_house_empty with
 # probabilities. Each of the two nouls also gets a verdict binary sensor at its
 # cutoff. Every answer fires `mentat_decision` with `watch: house_mode`.
@@ -124,6 +125,13 @@ mentat:
             motion)
           away: Nobody is home
           other: None of these fit
+        # Under this the sensor reads other, and the model's answer stays in the
+        # attributes. The number is a choice, and away carries a higher bar because
+        # it is the costliest one to get wrong.
+        min_confidence:
+          default: 0.5
+          away: 0.8
+        fallback: other
 
       - name: Everyone in bed
         type: noul

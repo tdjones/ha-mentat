@@ -23,9 +23,12 @@ The user pays for every request by the input token.
 
 A question entity with no answer to its own question is unavailable. It never
 shows a stale or made-up value. An entity that has its answer but whose own rules
-cannot give a value yet, such as a verdict first answered between release and
-cutoff, is unknown and stays available. `judge.py` holds those rules, so the
-entities and the event read one judgement. Choice and score entities carry the model's
+cannot give a value, such as a verdict first answered between release and cutoff
+or a score under its `min_confidence`, is unknown and stays available. A choice's
+`fallback` is no made-up value: it is the user's own word for "could not tell", and
+the model's answer stays beside it. Event data and action responses keep the
+model's answer and add `confident`. `judge.py` holds those rules, so the entities
+and the event read one judgement. Choice and score entities carry the model's
 confidence as an attribute. A noul has no confidence attribute, because its
 probability is already the whole answer.
 

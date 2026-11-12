@@ -26,6 +26,8 @@ from jevclient import Answer, ChoiceAnswer, NoulAnswer, ScoreAnswer
 
 from .const import (
     ATTR_CONFIDENCE,
+    ATTR_CONFIDENT,
+    ATTR_LEANING,
     ATTR_LEGEND,
     ATTR_NEAREST_LEVEL,
     ATTR_NORMALIZED,
@@ -53,6 +55,7 @@ from .entity import (
     async_add_current_entities,
     budget_or_none,
 )
+from .judge import confident
 
 if TYPE_CHECKING:
     from . import MentatConfigEntry
@@ -153,14 +156,20 @@ class MentatQuestionSensor(MentatQuestionEntity, SensorEntity):
         answer = self.answer
         if not isinstance(answer, self._kind.answer):
             return None
-        if isinstance(answer, ChoiceAnswer) and answer.choice not in self.spec.choices:
+        if isinstance(answer, ChoiceAnswer) and answer.choice not in self.spec.options:
             return None
         return answer
 
     @property
     def native_value(self) -> float | str | None:
         answer = self._typed_answer()
-        return None if answer is None else self._kind.value(answer)
+        if answer is None:
+            return None
+        spec = self.spec
+        # The user's word for "could not tell", or unknown when they gave none.
+        if confident(spec.min_confidence, answer) is False:
+            return spec.fallback
+        return self._kind.value(answer)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -169,8 +178,21 @@ class MentatQuestionSensor(MentatQuestionEntity, SensorEntity):
         return {
             ATTR_QUESTION_TYPE: self._type,
             **self._kind.attributes(answer),
+            **self._floor_attributes(answer),
             **self._window_attributes(),
         }
+
+    def _floor_attributes(self, answer: Answer) -> dict[str, Any]:
+        """Whether the answer cleared its floor, and what it said if it did not."""
+        if not isinstance(answer, ChoiceAnswer | ScoreAnswer):
+            return {}
+        sure = confident(self.spec.min_confidence, answer)
+        if sure is None:
+            return {}
+        if sure:
+            return {ATTR_CONFIDENT: True}
+        leaning = answer.choice if isinstance(answer, ChoiceAnswer) else answer.nearest_level
+        return {ATTR_CONFIDENT: False, ATTR_LEANING: leaning}
 
 
 class _MentatWatchDiagnostic(MentatWatchEntity, SensorEntity):

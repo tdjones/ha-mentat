@@ -57,6 +57,7 @@ from jevclient import (
     Answer,
     Box,
     BoxAnswer,
+    Choice,
     ChoiceAnswer,
     JevAuthError,
     JevError,
@@ -77,6 +78,7 @@ from .calibrate import (
 )
 from .const import (
     ATTR_ANSWERS,
+    ATTR_CONFIDENT,
     ATTR_CONFIG_ENTRY,
     ATTR_LATENCY_MS,
     ATTR_QUESTIONS,
@@ -84,11 +86,13 @@ from .const import (
     CONF_BRIEF,
     CONF_CUTOFF,
     CONF_DAYS,
+    CONF_FALLBACK,
     CONF_GRACE,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LOW,
     CONF_MAX_IMAGES,
+    CONF_MIN_CONFIDENCE,
     CONF_NOTE,
     CONF_OPTIONS,
     CONF_PICTURE,
@@ -118,6 +122,7 @@ from .const import (
     TYPE_NOUL,
     TYPE_SCORE,
 )
+from .judge import confident
 from .pictures import (
     Pictures,
     async_request_images,
@@ -126,7 +131,7 @@ from .pictures import (
     is_path_source,
 )
 from .readings import async_state
-from .schema import ENTRY, PROBABILITY, WINDOW_SCHEMA, WORDING
+from .schema import ENTRY, MIN_CONFIDENCE, PROBABILITY, WINDOW_SCHEMA, WORDING, floor_problem
 from .watches import answer_as_dict, options_from, question_from_mapping, window_from_mapping
 from .window import async_window_state_once
 
@@ -180,10 +185,17 @@ CHOICE_SCHEMA = vol.Schema(
             ),
             options_from,
         ),
+        vol.Optional(CONF_MIN_CONFIDENCE): MIN_CONFIDENCE,
     }
 )
 SCORE_SCHEMA = vol.Schema(
-    _READS | _ROUTING | _WORDED | {vol.Required(CONF_SCALE): vol.All(cv.ensure_list, [WORDING])}
+    _READS
+    | _ROUTING
+    | _WORDED
+    | {
+        vol.Required(CONF_SCALE): vol.All(cv.ensure_list, [WORDING]),
+        vol.Optional(CONF_MIN_CONFIDENCE): PROBABILITY,
+    }
 )
 ASK_SCHEMA = vol.Schema(
     _READS
@@ -568,16 +580,30 @@ async def _noul(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     return fields | {"verdict": answer.noul >= cutoff, "cutoff": cutoff} | _receipt(response)
 
 
+def _floor_field(floor: Any, answer: Answer) -> dict[str, bool]:
+    """Whether the answer cleared the caller's floor, beside the answer and never for it.
+
+    A script reads the model's own word next to this, and decides what to do.
+    """
+    sure = confident(floor, answer)
+    return {} if sure is None else {ATTR_CONFIDENT: sure}
+
+
 async def _choice(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     _within(len(call.data[CONF_OPTIONS]), MIN_CHOICE_OPTIONS, MAX_CHOICE_OPTIONS, "options_count")
+    floor = call.data.get(CONF_MIN_CONFIDENCE)
+    if problem := floor_problem(TYPE_CHOICE, call.data[CONF_OPTIONS], floor, None):
+        raise _invalid("min_confidence_invalid", reason=problem)
     response = await _ask_one(hass, call, TYPE_CHOICE)
-    return _sole(response, ChoiceAnswer)[1] | _receipt(response)
+    answer, fields = _sole(response, ChoiceAnswer)
+    return fields | _floor_field(floor, answer) | _receipt(response)
 
 
 async def _score(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     _within(len(call.data[CONF_SCALE]), MIN_SCORE_LEVELS, MAX_SCORE_LEVELS, "scale_count")
     response = await _ask_one(hass, call, TYPE_SCORE)
-    return _sole(response, ScoreAnswer)[1] | _receipt(response)
+    answer, fields = _sole(response, ScoreAnswer)
+    return fields | _floor_field(call.data.get(CONF_MIN_CONFIDENCE), answer) | _receipt(response)
 
 
 def _listed_question(key: str, raw: Mapping[str, Any]) -> Question:
@@ -609,10 +635,34 @@ def _listed_cutoff(key: str, raw: Mapping[str, Any]) -> float | None:
     return cutoff
 
 
+def _listed_floor(key: str, raw: Mapping[str, Any], question: Question) -> Any:
+    """A choice or score's min_confidence in a mentat.ask call, or None.
+
+    A fallback is refused rather than ignored: a response never swaps the model's
+    word for another, so the script that reads `confident` picks its own.
+    """
+    if raw.get(CONF_FALLBACK) is not None:
+        raise _invalid("question_fallback", key=key)
+    if raw.get(CONF_MIN_CONFIDENCE) is None:
+        return None
+    if raw[CONF_TYPE] not in (TYPE_CHOICE, TYPE_SCORE):
+        reason = "only a choice or a score carries a confidence"
+        raise _invalid("question_invalid", key=key, reason=reason)
+    try:
+        floor = MIN_CONFIDENCE(raw[CONF_MIN_CONFIDENCE])
+    except vol.Invalid as err:
+        raise _invalid("question_invalid", key=key, reason=f"min_confidence: {err}") from err
+    options = question.criteria if isinstance(question, Choice) else ()
+    if problem := floor_problem(raw[CONF_TYPE], options, floor, None):
+        raise _invalid("question_invalid", key=key, reason=problem)
+    return floor
+
+
 async def _ask(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     listed: Mapping[str, Mapping[str, Any]] = call.data[ATTR_QUESTIONS]
     questions = {key: _listed_question(key, raw) for key, raw in listed.items()}
     cutoffs = {key: _listed_cutoff(key, raw) for key, raw in listed.items()}
+    floors = {key: _listed_floor(key, raw, questions[key]) for key, raw in listed.items()}
     if not call.data[CONF_PICTURES]:
         for key, question in questions.items():
             if isinstance(question, Box):
@@ -620,7 +670,7 @@ async def _ask(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     response = await _send(hass, await _read_call(hass, call), questions)
     answers: dict[str, Any] = {}
     for key, answer in response.answers.items():
-        answers[key] = answer_as_dict(answer)
+        answers[key] = answer_as_dict(answer) | _floor_field(floors.get(key), answer)
         cutoff = cutoffs.get(key)
         if cutoff is not None and isinstance(answer, NoulAnswer):
             answers[key] |= {"verdict": answer.noul >= cutoff, "cutoff": cutoff}

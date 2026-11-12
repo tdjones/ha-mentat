@@ -21,6 +21,12 @@
   caught, missed and flipped, and whether the answers overlap so much that nothing
   separates them. A `grace` allows for answers coming after what they describe. It
   sends nothing and costs no tokens.
+- A choice or score can have a `min_confidence`. Under it a score reads unknown and
+  a choice reads its `fallback`, or unknown without one, and the model's answer
+  stays in the attributes with `confident` and `leaning`. A choice can give an option
+  a higher bar of its own in YAML. `mentat_decision`, `mentat.choice`, `mentat.score`
+  and `mentat.ask` add `confident` and keep the model's answer. A question without
+  one behaves as before; nothing needs changing.
 - A watch asks nothing until Home Assistant has started. It used to ask while other
   integrations were still loading, which logged an error for a watch whose entities
   had no state yet and billed an answer about part of the house for one whose

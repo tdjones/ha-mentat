@@ -27,7 +27,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.mentat.const import CONF_TOKEN_BUDGET, DOMAIN, SUBENTRY_QUESTION
 from custom_components.mentat.preview import (
     BAR_WIDTH,
-    Cutoffs,
+    Rules,
     describe_window,
     draw_answer,
     readable,
@@ -262,12 +262,12 @@ async def test_draw_answer_draws_a_noul_as_one_bar(hass: HomeAssistant) -> None:
 @pytest.mark.parametrize(
     ("noul", "cutoffs", "sentence"),
     [
-        (0.7, Cutoffs(0.7, 0.3), "With a cutoff of 0.7, the verdict sensor would read on."),
-        (0.5, Cutoffs(0.7), "With a cutoff of 0.7, the verdict sensor would read off."),
-        (0.2, Cutoffs(0.7, 0.3), "Under the release of 0.3, the verdict sensor would read off."),
+        (0.7, Rules(0.7, 0.3), "With a cutoff of 0.7, the verdict sensor would read on."),
+        (0.5, Rules(0.7), "With a cutoff of 0.7, the verdict sensor would read off."),
+        (0.2, Rules(0.7, 0.3), "Under the release of 0.3, the verdict sensor would read off."),
         (
             0.3,
-            Cutoffs(0.7, 0.3),
+            Rules(0.7, 0.3),
             "Between the release of 0.3 and the cutoff of 0.7, "
             "the verdict sensor would keep the state it had.",
         ),
@@ -275,10 +275,33 @@ async def test_draw_answer_draws_a_noul_as_one_bar(hass: HomeAssistant) -> None:
     ids=["over", "under-no-release", "under-release", "held"],
 )
 async def test_draw_answer_says_where_a_noul_leaves_its_verdict(
-    hass: HomeAssistant, noul: float, cutoffs: Cutoffs, sentence: str
+    hass: HomeAssistant, noul: float, cutoffs: Rules, sentence: str
 ) -> None:
     say = await sentences(hass)
     assert draw_answer(NoulAnswer(noul=noul), cutoffs, say).split("\n\n")[1] == sentence
+
+
+@pytest.mark.parametrize(
+    ("rules", "sentence"),
+    [
+        (Rules(min_confidence=0.9, fallback="unsure"), "would read unsure."),
+        (Rules(min_confidence=0.9), "would read unknown."),
+    ],
+    ids=["fallback", "unknown"],
+)
+async def test_draw_answer_says_what_the_sensor_shows_under_its_floor(
+    hass: HomeAssistant, rules: Rules, sentence: str
+) -> None:
+    say = await sentences(hass)
+    choice = ChoiceAnswer(choice="b", probabilities={"a": 0.3, "b": 0.7}, confidence=0.4)
+    drawn = draw_answer(choice, rules, say).split("\n\n")
+    assert drawn[-1] == f"Under the lowest confidence of 0.9, the sensor {sentence}"
+
+
+async def test_draw_answer_of_a_confident_choice_adds_no_sentence(hass: HomeAssistant) -> None:
+    say = await sentences(hass)
+    choice = ChoiceAnswer(choice="b", probabilities={"a": 0.1, "b": 0.9}, confidence=0.8)
+    assert len(draw_answer(choice, Rules(min_confidence=0.8), say).split("\n\n")) == 2
 
 
 async def test_draw_answer_ranks_a_choice_and_keeps_a_score_in_level_order(
@@ -302,7 +325,7 @@ async def test_draw_answer_of_a_box_says_it_has_no_drawing(hass: HomeAssistant) 
     say = await sentences(hass)
     box = BoxAnswer(top=0.1, bottom=0.2, left=0.3, right=0.4, confidence=0.5)
     assert (
-        draw_answer(box, Cutoffs(0.5), say)
+        draw_answer(box, Rules(0.5), say)
         == "This version of Mentat cannot show an answer of that shape."
     )
 

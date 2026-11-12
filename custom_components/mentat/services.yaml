@@ -99,6 +99,13 @@ choice:
         other:
       selector:
         object:
+    min_confidence:
+      required: false
+      example:
+        default: 0.5
+        leaving: 0.85
+      selector:
+        object:
     with_attributes:
       required: false
       default: false
@@ -152,6 +159,14 @@ score:
       selector:
         text:
           multiple: true
+    min_confidence:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
     with_attributes:
       required: false
       default: false

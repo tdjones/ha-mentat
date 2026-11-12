@@ -40,6 +40,23 @@ entity that shows the truth and suggests both numbers for that house. Nothing is
 held across a restart, as no answer is, so a first answer inside the band leaves
 the verdict unknown until one lands outside it.
 
+A choice or score always gives its likeliest answer, however unsure. Give it a
+`min_confidence` and an answer under that shows no value on the sensor: a score
+reads unknown, and a choice reads its `fallback`, or unknown without one. The
+`fallback` is your own word for "the model could not tell", such as `unsure`, or
+one of the options such as `other`. A word of your own joins the sensor's states
+and is never sent to the model. The model's answer stays in the attributes, with
+`confident: false` beside it and `leaning` naming what it would have said, so an
+automation can ask a person to confirm. A choice can give an option a higher bar
+than the rest, because some answers cost more to get wrong:
+
+```yaml
+min_confidence:
+  default: 0.5     # every option you do not name
+  leaving: 0.85    # this option must clear a higher bar
+fallback: other
+```
+
 ## Providers and dialects
 
 | Provider | Dialect | What you enter |
@@ -152,6 +169,12 @@ Pick the answer type, then fill in the form:
   description is optional. 2 to 255 lines, no line may start with a colon, and no
   name may appear twice.
 - **Levels**, for a score: one per line, lowest first, 2 to 10 of them.
+- **Lowest confidence to show**, for a choice or a score. Empty shows every answer.
+  Under it, the sensor shows the fallback, or unknown. A bar per option is written
+  in YAML only, because the form cannot check option names against the Options box
+  as you type.
+- **Fallback state**, for a choice with a lowest confidence: one of your options, or
+  a word of your own.
 - **Entities to read.** Pick by entity, device, area or label. Each entity goes
   out with its state, name, unit, device class, area and how long ago it changed.
 - **Note.** Text or a template, sent beside the readings under `note`. With no
@@ -254,6 +277,8 @@ mentat:
           drying: The dryer is running
           waiting: A machine finished and nobody has opened its door
           idle: Neither machine has run recently
+        min_confidence: 0.5         # under this the sensor shows the fallback
+        fallback: unsure            # a choice only; a score reads unknown
       - name: Urgency
         type: score
         instructions: How soon should someone move the laundry?
@@ -295,6 +320,9 @@ Mentat checks the block when Home Assistant reads it, and refuses:
   is not a list of 2 to 10, and `criteria` on a noul;
 - a `cutoff` or `release` outside 0 to 1, a `release` with no `cutoff` or over
   it, and either one on a choice or a score;
+- a `min_confidence` outside 0 to 1, or on a noul, a mapping of them on a score,
+  one naming no option of the choice, and a `fallback` with no `min_confidence` or
+  on a score;
 - a `scan_interval` under 1 or not a whole number, and a `note` that is not a
   valid template;
 - an unquoted `yes`, `no`, `on` or `off` used as a word under `high`, `low` or a
@@ -387,8 +415,8 @@ belongs to it.
 | --- | --- | --- |
 | Noul question sensor | The probability, to 3 places | `question_type` |
 | Verdict binary sensor | On once the probability reaches the cutoff, off under the release, held in between | `probability`, `cutoff`, and with a release `release` and `held` |
-| Choice question sensor | The winning option, an enum sensor | `question_type`, `options`, `confidence`, `probabilities` |
-| Score question sensor | The weighted level, counted from 0 for the lowest | `question_type`, `confidence`, `probabilities`, `normalized`, `legend`, `nearest_level` |
+| Choice question sensor | The winning option, an enum sensor, or under its `min_confidence` its `fallback` or unknown | `question_type`, `options`, `confidence`, `probabilities`, and with a `min_confidence` `confident`, and under it `leaning` |
+| Score question sensor | The weighted level, counted from 0 for the lowest, or unknown under its `min_confidence` | `question_type`, `confidence`, `probabilities`, `normalized`, `legend`, `nearest_level`, and with a `min_confidence` `confident`, and under it `leaning` |
 | Requests today | Requests billed since midnight | |
 | Tokens today | Input tokens billed since midnight | `token_budget` |
 | Spend today | An estimate in US dollars | `token_price` |
@@ -421,7 +449,9 @@ shows a stale or made-up value. It goes unavailable when:
 
 A verdict whose first answer since a restart lands between release and cutoff
 reads unknown rather than unavailable: its probability sensor has an answer, and
-nothing yet says which side of the band the verdict was on.
+nothing yet says which side of the band the verdict was on. A choice or score under
+its `min_confidence` with no fallback reads unknown for the same reason: an answer
+came back, and it was not sure enough to show.
 
 A watch that nothing reads is not asked at all: one with `fire_event: false`
 whose question, verdict and diagnostic entities are all disabled. A watch that
@@ -452,7 +482,8 @@ input_tokens: 3120
 
 A choice answer carries `choice`, `confidence` and `probabilities`. A score
 answer carries `score`, `normalized`, `nearest_level`, `confidence`, `legend` and
-`probabilities`. A question the reply left out is missing from `answers`.
+`probabilities`. With a `min_confidence`, either also carries `confident`, and the
+answer itself stays the model's, whatever the sensor shows. A question the reply left out is missing from `answers`.
 Trigger on the decision rather than on a sensor's every change:
 
 ```yaml
@@ -548,7 +579,10 @@ means. A name with nothing after its colon has no description:
 ```
 
 Returns `choice`, `confidence`, `probabilities` and the same `model`,
-`latency_ms` and `usage`.
+`latency_ms` and `usage`. An optional `min_confidence`, one number or a mapping as
+under [Question types](#question-types), adds `confident`. `choice` stays the model's
+word either way, so a script reads `confident` and picks what to do. There is no
+`fallback` here.
 
 ### mentat.score
 
@@ -564,7 +598,8 @@ response_variable: answer
 
 `scale` lists 2 to 10 levels, lowest first. Returns `score`, `normalized` (the
 score divided by the top level), `nearest_level`, `confidence`, `legend`,
-`probabilities`, `model`, `latency_ms` and `usage`.
+`probabilities`, `model`, `latency_ms` and `usage`. An optional `min_confidence`, one
+number, adds `confident`.
 
 ### mentat.ask
 
@@ -596,7 +631,9 @@ response_variable: answer
 Returns `answers`, keyed as you named the questions, plus `model`, `latency_ms`
 and `usage`. Each answer carries its `type`. A noul given a `cutoff` also
 carries `verdict` and `cutoff`, as `mentat.noul` returns them. A `release` is
-refused, because an action keeps nothing from one call to the next to hold. A box question needs `pictures` and its answer
+refused, because an action keeps nothing from one call to the next to hold. A choice
+or score given a `min_confidence` also carries `confident`. A `fallback` is refused,
+because a response never swaps the model's answer for another. A box question needs `pictures` and its answer
 has the edges and `confidence` but not the picture's size.
 
 ### mentat.box

@@ -52,12 +52,14 @@ from .const import (
     CONF_EVENT_DATA,
     CONF_EVENT_TYPE,
     CONF_EVENTS,
+    CONF_FALLBACK,
     CONF_FIRE_EVENT,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LABEL,
     CONF_LOW,
     CONF_MAX_EVENTS,
+    CONF_MIN_CONFIDENCE,
     CONF_NOTE,
     CONF_OPTIONS,
     CONF_QUESTIONS,
@@ -89,6 +91,8 @@ from .const import (
 )
 
 type Evaluate = Literal["on_event", "interval", "both"]
+# One bar for a question, or a bar per option with FLOOR_DEFAULT for the rest.
+type Floor = float | Mapping[str, float]
 
 # The edges of a box answer and its confidence, in the order they are reported.
 BOX_SIDES: Final = ("left", "top", "right", "bottom", "confidence")
@@ -128,6 +132,9 @@ class QuestionSpec:
     # Below this a verdict turns off; between it and the cutoff it holds. None
     # is the cutoff itself, which leaves no band to hold in.
     release: float | None = None
+    # Under this confidence a choice shows its fallback and a score nothing.
+    min_confidence: Floor | None = None
+    fallback: str | None = None
 
     @property
     def wants_verdict(self) -> bool:
@@ -135,10 +142,20 @@ class QuestionSpec:
         return self.cutoff is not None and isinstance(self.question, Noul)
 
     @property
-    def choices(self) -> tuple[str, ...]:
-        """The states a choice's sensor can take. Other types have none."""
+    def options(self) -> tuple[str, ...]:
+        """What the model can answer a choice with. Other types have none."""
         question = self.question
         return tuple(question.criteria) if isinstance(question, Choice) else ()
+
+    @property
+    def choices(self) -> tuple[str, ...]:
+        """The states a choice's sensor can take: its options and its fallback.
+
+        A fallback that is no option is the user's word, and the model never sees it.
+        """
+        if self.fallback is None or self.fallback in self.options:
+            return self.options
+        return (*self.options, self.fallback)
 
 
 @dataclass(slots=True, frozen=True)
@@ -264,6 +281,20 @@ def release_from(raw: Mapping[str, Any]) -> float | None:
     return _number(raw, CONF_RELEASE)
 
 
+def min_confidence_from(raw: Mapping[str, Any]) -> Floor | None:
+    """The bar or bars a choice or score must clear, or None when it has none."""
+    value = raw.get(CONF_MIN_CONFIDENCE)
+    if isinstance(value, Mapping):
+        return {option: float(bar) for option, bar in value.items()}
+    return _number(raw, CONF_MIN_CONFIDENCE)
+
+
+def fallback_from(raw: Mapping[str, Any]) -> str | None:
+    """The state shown under the floor. Blank is absent, as for high and low."""
+    fallback: str | None = raw.get(CONF_FALLBACK) or None
+    return fallback
+
+
 def question_spec(raw: Mapping[str, Any], key: str) -> QuestionSpec:
     """A named question under the key its entities' unique ids are made from."""
     return QuestionSpec(
@@ -273,6 +304,8 @@ def question_spec(raw: Mapping[str, Any], key: str) -> QuestionSpec:
         question=question_from_mapping(raw),
         cutoff=cutoff_from(raw),
         release=release_from(raw),
+        min_confidence=min_confidence_from(raw),
+        fallback=fallback_from(raw),
     )
 
 

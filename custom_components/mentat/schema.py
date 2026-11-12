@@ -9,7 +9,7 @@ them. Nothing here builds a question, reads state or talks to a server.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from datetime import timedelta
 from typing import Any, Final, cast
 
@@ -35,12 +35,14 @@ from .const import (
     CONF_EVENT_DATA,
     CONF_EVENT_TYPE,
     CONF_EVENTS,
+    CONF_FALLBACK,
     CONF_FIRE_EVENT,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LABEL,
     CONF_LOW,
     CONF_MAX_EVENTS,
+    CONF_MIN_CONFIDENCE,
     CONF_NOTE,
     CONF_QUESTIONS,
     CONF_RELEASE,
@@ -55,6 +57,7 @@ from .const import (
     EVALUATE_BOTH,
     EVALUATE_INTERVAL,
     EVALUATE_MODES,
+    FLOOR_DEFAULT,
     MAX_WINDOW_EVENTS,
     MAX_WINDOW_SECONDS,
     MAX_WINDOW_SETTLE_SECONDS,
@@ -89,6 +92,7 @@ def not_boolean(value: Any) -> Any:
 WORDING = vol.All(not_boolean, ENTRY)
 
 PROBABILITY = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1.0))
+MIN_CONFIDENCE = vol.Any(PROBABILITY, {cv.string: PROBABILITY})
 
 _RENAME: Final = "give them names that differ by more than punctuation or case"
 _NOUL_ONLY: Final = "'high:', 'low:', 'cutoff:' and 'release:' apply to a noul only"
@@ -100,6 +104,8 @@ _STRAY: Final = {
     CONF_LOW: _NOUL_ONLY,
     CONF_CUTOFF: _NOUL_ONLY,
     CONF_RELEASE: _NOUL_ONLY,
+    CONF_MIN_CONFIDENCE: "a noul has no confidence: its probability is the answer, use 'cutoff:'",
+    CONF_FALLBACK: "'fallback:' applies to a choice only: a number has no safe stand-in",
 }
 
 
@@ -124,8 +130,8 @@ def _levels_fit(criteria: Any) -> str | None:
 # Per type: which of the typed keys it may carry, and what its criteria must be.
 _SHAPES: Final[dict[str, tuple[frozenset[str], Callable[[Any], str | None] | None]]] = {
     TYPE_NOUL: (frozenset({CONF_HIGH, CONF_LOW, CONF_CUTOFF, CONF_RELEASE}), None),
-    TYPE_CHOICE: (frozenset({CONF_CRITERIA}), _options_fit),
-    TYPE_SCORE: (frozenset({CONF_CRITERIA}), _levels_fit),
+    TYPE_CHOICE: (frozenset({CONF_CRITERIA, CONF_MIN_CONFIDENCE, CONF_FALLBACK}), _options_fit),
+    TYPE_SCORE: (frozenset({CONF_CRITERIA, CONF_MIN_CONFIDENCE}), _levels_fit),
 }
 
 
@@ -144,6 +150,20 @@ def release_problem(cutoff: float | None, release: float | None) -> str | None:
     return None
 
 
+def floor_problem(
+    kind: str, options: Collection[str], floor: Any, fallback: str | None
+) -> str | None:
+    """Why this min_confidence and fallback cannot go on this question, or None."""
+    if fallback is not None and floor is None:
+        return "'fallback:' is what shows under 'min_confidence:', so it needs one"
+    if not isinstance(floor, Mapping):
+        return None
+    if kind != TYPE_CHOICE:
+        return "a score takes one number for 'min_confidence:', as no option of it wins"
+    unknown = sorted(set(floor) - set(options) - {FLOOR_DEFAULT})
+    return f"'min_confidence:' names {unknown[0]!r}, which is no option" if unknown else None
+
+
 def question_shape(raw: dict[str, Any]) -> dict[str, Any]:
     """Refuse criteria of the wrong shape, then any key the type does not take."""
     allowed, check = _SHAPES[raw[CONF_TYPE]]
@@ -153,6 +173,11 @@ def question_shape(raw: dict[str, Any]) -> dict[str, Any]:
         problem = _STRAY[stray[0]] if stray else None
     if problem is None:
         problem = release_problem(raw.get(CONF_CUTOFF), raw.get(CONF_RELEASE))
+    if problem is None:
+        options = raw[CONF_CRITERIA] if raw[CONF_TYPE] == TYPE_CHOICE else ()
+        problem = floor_problem(
+            raw[CONF_TYPE], options, raw.get(CONF_MIN_CONFIDENCE), raw.get(CONF_FALLBACK)
+        )
     if problem is not None:
         raise vol.Invalid(f"question {raw.get(CONF_NAME, '?')!r}: {problem}")
     return raw
@@ -170,6 +195,8 @@ QUESTION_SCHEMA = vol.All(
             vol.Optional(CONF_CRITERIA): vol.Any({cv.string: vol.Any(ENTRY, None)}, [WORDING]),
             vol.Optional(CONF_CUTOFF): PROBABILITY,
             vol.Optional(CONF_RELEASE): PROBABILITY,
+            vol.Optional(CONF_MIN_CONFIDENCE): MIN_CONFIDENCE,
+            vol.Optional(CONF_FALLBACK): vol.All(not_boolean, cv.string),
         }
     ),
     question_shape,

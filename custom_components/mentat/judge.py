@@ -9,11 +9,13 @@ Home Assistant's state.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from jevclient import Answer, NoulAnswer
+from jevclient import Answer, ChoiceAnswer, NoulAnswer, ScoreAnswer
 
-from .watches import QuestionSpec
+from .const import FLOOR_DEFAULT
+from .watches import Floor, QuestionSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,3 +54,23 @@ def verdict(spec: QuestionSpec, answer: Answer | None, previous: bool | None) ->
         return None
     on = side(answer.noul, spec.cutoff, spec.release)
     return Verdict(on=previous, held=True) if on is None else Verdict(on=on)
+
+
+def bar(floor: Floor | None, answer: ChoiceAnswer | ScoreAnswer) -> float | None:
+    """The confidence this answer must reach, or None when nothing is asked of it.
+
+    A riskier option can carry a higher bar, so a mapping is read for the option
+    that won.
+    """
+    if not isinstance(floor, Mapping):
+        return floor
+    won = answer.choice if isinstance(answer, ChoiceAnswer) else FLOOR_DEFAULT
+    return floor.get(won, floor.get(FLOOR_DEFAULT))
+
+
+def confident(floor: Floor | None, answer: Answer | None) -> bool | None:
+    """Whether the answer reached its bar. None when it has no bar or no confidence."""
+    if not isinstance(answer, ChoiceAnswer | ScoreAnswer):
+        return None
+    needed = bar(floor, answer)
+    return None if needed is None else answer.confidence >= needed

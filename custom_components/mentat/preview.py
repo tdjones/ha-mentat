@@ -25,12 +25,15 @@ from homeassistant.helpers import translation
 from jevclient import Answer, ChoiceAnswer, NoulAnswer, ScoreAnswer
 
 from .const import DOMAIN, SUBENTRY_QUESTION
-from .judge import side
+from .judge import bar, confident, side
 from .readings import async_state
 from .services import async_ask
 from .watches import (
+    Floor,
     WatchConfig,
     cutoff_from,
+    fallback_from,
+    min_confidence_from,
     question_from_mapping,
     release_from,
     share_key,
@@ -136,20 +139,32 @@ class _Bar:
 
 
 @dataclass(frozen=True, slots=True)
-class Cutoffs:
-    """Where a noul's verdict turns on, and where it turns off when that differs."""
+class Rules:
+    """What the question's own settings do to an answer on the sensors."""
 
-    cutoff: float
+    cutoff: float | None = None
     release: float | None = None
+    min_confidence: Floor | None = None
+    fallback: str | None = None
 
 
-def _draw_noul(answer: NoulAnswer, cutoffs: Cutoffs | None, say: Say) -> list[str]:
+def _under_floor(answer: ChoiceAnswer | ScoreAnswer, rules: Rules | None, say: Say) -> list[str]:
+    """What the sensor would show instead, for an answer under its floor."""
+    if rules is None or confident(rules.min_confidence, answer) is not False:
+        return []
+    floor = f"{bar(rules.min_confidence, answer):g}"
+    if rules.fallback is None:
+        return [say("trial_floor_unknown", floor=floor)]
+    return [say("trial_floor_fallback", floor=floor, fallback=rules.fallback)]
+
+
+def _draw_noul(answer: NoulAnswer, rules: Rules | None, say: Say) -> list[str]:
     drawn = [f"`{_Bar('', answer.noul).cells}`  **{answer.noul:.2f}**"]
-    if cutoffs is None:
+    if rules is None or rules.cutoff is None:
         return drawn
-    cutoff = f"{cutoffs.cutoff:g}"
-    release = "" if cutoffs.release is None else f"{cutoffs.release:g}"
-    match side(answer.noul, cutoffs.cutoff, cutoffs.release):
+    cutoff = f"{rules.cutoff:g}"
+    release = "" if rules.release is None else f"{rules.release:g}"
+    match side(answer.noul, rules.cutoff, rules.release):
         case True:
             drawn.append(say("trial_cutoff_over", cutoff=cutoff))
         case False if not release:
@@ -161,15 +176,15 @@ def _draw_noul(answer: NoulAnswer, cutoffs: Cutoffs | None, say: Say) -> list[st
     return drawn
 
 
-def _draw_choice(answer: ChoiceAnswer, cutoffs: Cutoffs | None, say: Say) -> list[str]:
+def _draw_choice(answer: ChoiceAnswer, rules: Rules | None, say: Say) -> list[str]:
     # Likeliest first, so the eye lands on the winner.
     ranked = sorted(answer.probabilities.items(), key=lambda item: item[1], reverse=True)
     bars = [_Bar(name, p, bold=name == answer.choice) for name, p in ranked]
     verdict = say("trial_winner", choice=answer.choice, confidence=f"{answer.confidence:.2f}")
-    return ["\n".join(bar.row() for bar in bars), verdict]
+    return ["\n".join(row.row() for row in bars), verdict, *_under_floor(answer, rules, say)]
 
 
-def _draw_score(answer: ScoreAnswer, cutoffs: Cutoffs | None, say: Say) -> list[str]:
+def _draw_score(answer: ScoreAnswer, rules: Rules | None, say: Say) -> list[str]:
     # Lowest level first, the order the author wrote them in.
     bars = [
         _Bar(answer.legend.get(level, level), p)
@@ -181,22 +196,22 @@ def _draw_score(answer: ScoreAnswer, cutoffs: Cutoffs | None, say: Say) -> list[
         level=answer.nearest_level,
         confidence=f"{answer.confidence:.2f}",
     )
-    return ["\n".join(bar.row() for bar in bars), verdict]
+    return ["\n".join(row.row() for row in bars), verdict, *_under_floor(answer, rules, say)]
 
 
-_DRAWERS: Final[dict[type[Answer], Callable[[Any, Cutoffs | None, Say], list[str]]]] = {
+_DRAWERS: Final[dict[type[Answer], Callable[[Any, Rules | None, Say], list[str]]]] = {
     NoulAnswer: _draw_noul,
     ChoiceAnswer: _draw_choice,
     ScoreAnswer: _draw_score,
 }
 
 
-def draw_answer(answer: Answer, cutoffs: Cutoffs | None, say: Say) -> str:
+def draw_answer(answer: Answer, rules: Rules | None, say: Say) -> str:
     """The answer as bars. Bars rank at a glance, where a column of decimals does not."""
     drawer = _DRAWERS.get(type(answer))
     if drawer is None:
         return say("trial_undrawable")
-    return "\n\n".join(drawer(answer, cutoffs, say))
+    return "\n\n".join(drawer(answer, rules, say))
 
 
 async def trial(
@@ -226,9 +241,10 @@ async def trial(
     spent = say(
         "trial_cost", tokens=str(billed), cost=f"{usd:.6f}", ms=f"{response.latency_ms:.0f}"
     )
-    cutoff = cutoff_from(data)
-    cutoffs = None if cutoff is None else Cutoffs(cutoff, release_from(data))
-    return draw_answer(answer, cutoffs, say) + f"\n\n_{spent}_"
+    rules = Rules(
+        cutoff_from(data), release_from(data), min_confidence_from(data), fallback_from(data)
+    )
+    return draw_answer(answer, rules, say) + f"\n\n_{spent}_"
 
 
 async def describe_window(hass: HomeAssistant, state: Any) -> str | None:

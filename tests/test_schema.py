@@ -61,6 +61,30 @@ def asks(*names: str) -> list[dict[str, Any]]:
             r"\(0.7\) cannot be over 'cutoff:' \(0.6\)",
         ),
         ({"type": "score", "criteria": ["cold", "hot"], "release": 0.4}, "apply to a noul only"),
+        ({"type": "noul", "min_confidence": 0.5}, "a noul has no confidence"),
+        ({"type": "score", "criteria": ["a", "b"], "fallback": "x"}, "applies to a choice only"),
+        ({"type": "choice", "criteria": {"a": None, "b": None}, "fallback": "x"}, "needs one"),
+        (
+            {"type": "choice", "criteria": {"a": None, "b": None}, "min_confidence": {"c": 0.5}},
+            "names 'c', which is no option",
+        ),
+        (
+            {"type": "score", "criteria": ["a", "b"], "min_confidence": {"default": 0.5}},
+            "one number",
+        ),
+        (
+            {"type": "choice", "criteria": {"a": None, "b": None}, "min_confidence": 1.5},
+            "min_confidence",
+        ),
+        (
+            {
+                "type": "choice",
+                "criteria": {"a": None, "b": None},
+                "min_confidence": 0.5,
+                "fallback": False,
+            },
+            "put the word in quotes",
+        ),
         ({"type": "box"}, "value must be one of"),
     ],
 )
@@ -83,6 +107,13 @@ def test_question_schema_names_the_question() -> None:
     [
         {"type": "noul", "high": "Steam", "low": "Quiet", "cutoff": "0.25"},
         {"type": "noul", "cutoff": 0.7, "release": 0.3},
+        {
+            "type": "choice",
+            "criteria": {"a": None, "b": None},
+            "min_confidence": {"default": 0.5, "a": 0.8},
+            "fallback": "unsure",
+        },
+        {"type": "score", "criteria": ["a", "b"], "min_confidence": 0.4},
         {"type": "noul", "cutoff": 0.7, "release": 0.7},
         {"type": "choice", "criteria": {"boiling": "Steam", "off": None}},
         {"type": "score", "criteria": ["cold", {"warm": "hand hot"}, "boiling"]},

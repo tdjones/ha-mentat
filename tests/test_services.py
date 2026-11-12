@@ -264,6 +264,83 @@ async def test_box_with_a_one_off_model_leaves_the_entry_model_alone(
     assert loaded.runtime_data.model_version == "jev-1.15.0"
 
 
+@pytest.mark.parametrize(
+    ("floor", "sure"),
+    [(0.1, True), (0.99, False), ({"default": 0.1, "flour": 0.99}, False)],
+    ids=["over", "under", "own-bar"],
+)
+async def test_choice_says_whether_it_cleared_the_floor_and_keeps_its_answer(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    fake_client: MagicMock,
+    floor: Any,
+    sure: bool,
+) -> None:
+    fake_client.ask.return_value = reply(answer=PANTRY)
+    answered = await act(
+        hass, "choice", PLAIN | {"options": ["flour", "sugar"], "min_confidence": floor}
+    )
+    assert (answered["choice"], answered["confident"]) == ("flour", sure)
+
+
+async def test_score_says_whether_it_cleared_the_floor(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    fake_client.ask.return_value = reply(answer=LEAK)
+    data = PLAIN | {"scale": ["Dry", "Damp", "Dripping", "Flooding"], "min_confidence": 0.99}
+    answered = await act(hass, "score", data)
+    assert answered["confident"] is False
+    assert answered["score"] == LEAK.score
+
+
+async def test_choice_without_a_floor_says_nothing_of_it(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    fake_client.ask.return_value = reply(answer=PANTRY)
+    answered = await act(hass, "choice", PLAIN | {"options": ["flour", "sugar"]})
+    assert "confident" not in answered
+
+
+async def test_choice_with_a_bar_for_no_option_is_refused_before_sending(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    data = PLAIN | {"options": ["flour", "sugar"], "min_confidence": {"rice": 0.5}}
+    with pytest.raises(ServiceValidationError) as caught:
+        await act(hass, "choice", data)
+    assert caught.value.translation_key == "min_confidence_invalid"
+    assert only_the_probe_was_sent(fake_client)
+
+
+async def test_ask_says_whether_each_answer_cleared_its_floor(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    fake_client.ask.return_value = reply(jar=PANTRY, leak=LEAK)
+    answered = await act(
+        hass,
+        "ask",
+        {
+            "note": "Utility room at 07:10",
+            "questions": {
+                "jar": {
+                    "type": "choice",
+                    "instructions": "Which jar is lower?",
+                    "criteria": {"flour": None, "sugar": None},
+                    "min_confidence": 0.99,
+                },
+                "leak": {
+                    "type": "score",
+                    "instructions": "How bad?",
+                    "criteria": ["Dry", "Damp", "Dripping", "Flooding"],
+                    "min_confidence": 0.01,
+                },
+            },
+        },
+    )
+    assert answered["answers"]["jar"]["confident"] is False
+    assert answered["answers"]["jar"]["choice"] == "flour"
+    assert answered["answers"]["leak"]["confident"] is True
+
+
 @pytest.mark.parametrize(("noul", "verdict"), [(0.7, True), (0.69, False)])
 async def test_ask_gives_a_noul_with_a_cutoff_its_verdict(
     hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock, noul: float, verdict: bool
@@ -425,6 +502,47 @@ async def test_action_with_a_bad_field_is_refused_unsent(
         ),
         ({"a": {"type": "noul", "instructions": "Cool?", "cutoff": 1.5}}, {}, "question_invalid"),
         (
+            {
+                "a": {
+                    "type": "choice",
+                    "instructions": "Which?",
+                    "criteria": {"flour": None, "sugar": None},
+                    "fallback": "x",
+                }
+            },
+            {},
+            "question_fallback",
+        ),
+        (
+            {"a": {"type": "noul", "instructions": "Cool?", "min_confidence": 0.5}},
+            {},
+            "question_invalid",
+        ),
+        (
+            {
+                "a": {
+                    "type": "choice",
+                    "instructions": "Which?",
+                    "criteria": {"flour": None, "sugar": None},
+                    "min_confidence": 1.5,
+                }
+            },
+            {},
+            "question_invalid",
+        ),
+        (
+            {
+                "a": {
+                    "type": "choice",
+                    "instructions": "Which?",
+                    "criteria": {"flour": None, "sugar": None},
+                    "min_confidence": {"rice": 0.5},
+                }
+            },
+            {},
+            "question_invalid",
+        ),
+        (
             {"a": {"type": "noul", "instructions": "Cool?"}},
             {"window": {"duration": "00:10:00"}},
             "window_without_target",
@@ -440,6 +558,10 @@ async def test_action_with_a_bad_field_is_refused_unsent(
         "release",
         "cutoff-on-choice",
         "cutoff-range",
+        "fallback",
+        "floor-on-noul",
+        "floor-range",
+        "floor-no-option",
         "win",
     ],
 )

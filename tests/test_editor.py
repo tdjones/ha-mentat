@@ -146,6 +146,10 @@ def test_forms_carry_only_their_own_answer_fields() -> None:
     keys = {kind: {str(marker) for marker in form.schema} for kind, form in FORMS.items()}
     assert {"high", "low", "cutoff", "release"} <= keys["noul"]
     assert not {"cutoff", "release"} & (keys["choice"] | keys["score"])
+    assert {"min_confidence", "fallback"} <= keys["choice"]
+    assert "min_confidence" in keys["score"]
+    assert "fallback" not in keys["score"]
+    assert not {"min_confidence", "fallback"} & keys["noul"]
     assert "options" in keys["choice"]
     assert "scale" in keys["score"]
     assert not {"options", "scale"} & keys["noul"]
@@ -328,6 +332,11 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
             {"target": {"entity_id": [FREEZER]}, "cutoff": 0.5, "release": 0.6},
             {"release": "release_over_cutoff"},
         ),
+        (
+            "choice",
+            {"target": {"entity_id": [FREEZER]}, "options": "a\nb", "fallback": "unsure"},
+            {"fallback": "fallback_needs_floor"},
+        ),
     ],
     ids=[
         "empty",
@@ -343,6 +352,7 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
         "events-own",
         "release-alone",
         "release-over",
+        "fallback-alone",
     ],
 )
 async def test_form_with_a_problem_shows_again_with_the_error_on_its_field(

@@ -51,6 +51,7 @@ from jevclient import (
 from .budget import Ledger
 from .client import DecisionClient
 from .const import (
+    ATTR_CONFIDENT,
     ATTR_EVENT_COUNT,
     ATTR_HELD,
     ATTR_LAST_EVALUATED,
@@ -67,7 +68,7 @@ from .const import (
     UID_WATCH,
     YAML_ID_SCOPE,
 )
-from .judge import Verdict, verdict
+from .judge import Verdict, confident, verdict
 from .providers import Provider
 from .readings import async_state, is_mentat_entity
 from .watches import WatchConfig, answer_as_dict
@@ -539,6 +540,8 @@ class MentatCoordinator(DataUpdateCoordinator[dict[str, Answer]]):
             if (answer := response.answers.get(spec.key)) is None:
                 continue
             answers[spec.key] = shown = answer_as_dict(answer) | {"name": spec.name}
+            if (sure := confident(spec.min_confidence, answer)) is not None:
+                shown[ATTR_CONFIDENT] = sure
             if (decided := judged.get(spec.key)) is None:
                 continue
             if decided.on is not None:

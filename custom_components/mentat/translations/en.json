@@ -188,6 +188,12 @@
     "question_cutoff_noul_only": {
       "message": "Question {key} has a cutoff, and only a noul has one."
     },
+    "question_fallback": {
+      "message": "Question {key} has a fallback. A response never swaps the model's answer for another, so read confident in the script and pick there."
+    },
+    "min_confidence_invalid": {
+      "message": "Mentat cannot use this min_confidence: {reason}"
+    },
     "box_needs_image": {
       "message": "Question {key} is a box, and a box needs a picture under pictures."
     },
@@ -411,7 +417,9 @@
             "target": "Entities to read",
             "note": "Note",
             "brief": "Brief",
-            "options": "Options"
+            "options": "Options",
+            "min_confidence": "Lowest confidence to show",
+            "fallback": "Fallback state"
           },
           "data_description": {
             "name": "The sensor this question makes takes this name.",
@@ -419,7 +427,9 @@
             "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
             "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
             "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
-            "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options."
+            "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options.",
+            "min_confidence": "Optional. Under this, the sensor shows the fallback, or unknown when there is none, and the model's own answer stays in the attributes. A number from 0 to 1. Empty shows every answer.",
+            "fallback": "Optional. What the sensor shows under the lowest confidence: one of your options, or a word of your own such as unsure. Needs a lowest confidence."
           },
           "sections": {
             "advanced": {
@@ -468,7 +478,8 @@
             "target": "Entities to read",
             "note": "Note",
             "brief": "Brief",
-            "scale": "Scale"
+            "scale": "Scale",
+            "min_confidence": "Lowest confidence to show"
           },
           "data_description": {
             "name": "The sensor this question makes takes this name.",
@@ -476,7 +487,8 @@
             "target": "Mentat sends each entity's state with its name, unit, device class, area and age. Leave it empty when the note carries everything the question needs.",
             "note": "Plain text or a template. With entities picked, it goes beside their readings under note.",
             "brief": "Facts about how to read this house, such as what a reading means for one device. Sent with the question rather than with the readings.",
-            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree."
+            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree.",
+            "min_confidence": "Optional. Under this, the sensor reads unknown, and the model's own answer stays in the attributes. A number from 0 to 1. Empty shows every answer."
           },
           "sections": {
             "advanced": {
@@ -530,7 +542,9 @@
             "cutoff": "Cutoff for a verdict sensor",
             "release": "Verdict turns off below",
             "options": "Options",
-            "scale": "Scale"
+            "scale": "Scale",
+            "min_confidence": "Lowest confidence to show",
+            "fallback": "Fallback state"
           },
           "data_description": {
             "name": "The sensor this question makes takes this name.",
@@ -543,7 +557,9 @@
             "cutoff": "Leave it empty for the probability sensor alone. With a value, a verdict sensor turns on when the probability reaches it.",
             "release": "Optional. Below this the verdict turns off; between it and the cutoff it keeps its last state, so a probability that wobbles around the cutoff does not flip it. Empty means the cutoff, as before. A number from 0 up to the cutoff.",
             "options": "One per line, as `name: what it means`. The description is optional. Between 2 and 255 options.",
-            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree."
+            "scale": "One per line, lowest first. Between 2 and 10 levels. Describe a situation for each, not a degree.",
+            "min_confidence": "Optional. Under this, the sensor shows the fallback, or unknown when there is none, and the model's own answer stays in the attributes. A number from 0 to 1. Empty shows every answer.",
+            "fallback": "Optional. What the sensor shows under the lowest confidence: one of your options, or a word of your own such as unsure. Needs a lowest confidence."
           },
           "sections": {
             "advanced": {
@@ -601,7 +617,8 @@
         "window_events_invalid": "Bus events are a list of items, each with an event_type and optionally data and label.",
         "window_event_is_own": "A window cannot log Mentat's own events such as mentat_decision. Each answer fires one, so the question would ask again after every answer.",
         "release_without_cutoff": "A verdict turns off below this, so it needs a cutoff to turn on at.",
-        "release_over_cutoff": "This has to be at most the cutoff. Above it, one probability would turn the verdict both on and off."
+        "release_over_cutoff": "This has to be at most the cutoff. Above it, one probability would turn the verdict both on and off.",
+        "fallback_needs_floor": "A fallback shows under the lowest confidence, so give that a value too."
       },
       "abort": {
         "reconfigure_successful": "Saved."
@@ -640,6 +657,12 @@
           "probabilities": {
             "name": "Probability per option"
           },
+          "confident": {
+            "name": "Confident"
+          },
+          "leaning": {
+            "name": "Leaning"
+          },
           "window_start": {
             "name": "Window start"
           },
@@ -664,6 +687,12 @@
           },
           "probabilities": {
             "name": "Probability per level"
+          },
+          "confident": {
+            "name": "Confident"
+          },
+          "leaning": {
+            "name": "Leaning"
           },
           "normalized": {
             "name": "Normalized"
@@ -774,6 +803,8 @@
     "trial_cutoff_held": "Between the release of {release} and the cutoff of {cutoff}, the verdict sensor would keep the state it had.",
     "trial_winner": "The model leans to **{choice}**. Confidence in this answer: {confidence}.",
     "trial_score": "The answer lands at **{score}**, nearest to **{level}**. Confidence in this answer: {confidence}.",
+    "trial_floor_fallback": "Under the lowest confidence of {floor}, the sensor would read {fallback}.",
+    "trial_floor_unknown": "Under the lowest confidence of {floor}, the sensor would read unknown.",
     "trial_undrawable": "This version of Mentat cannot show an answer of that shape.",
     "trial_failed": "Trial request failed: {reason}",
     "trial_mismatched": "The reply does not match the question that was sent.",
@@ -854,6 +885,10 @@
           "name": "Options",
           "description": "A list of names, or a mapping of each name to what it means. 2 to 255 options. Include a catch-all such as other when the list may not cover every case."
         },
+        "min_confidence": {
+          "name": "Lowest confidence",
+          "description": "Optional. The response adds confident: whether the answer's confidence reached this. The answer itself comes back either way. A mapping gives options their own bar, with default for the rest."
+        },
         "with_attributes": {
           "name": "With attributes",
           "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
@@ -892,6 +927,10 @@
           "name": "Scale",
           "description": "2 to 10 levels, lowest first. Describe a situation for each rather than a degree."
         },
+        "min_confidence": {
+          "name": "Lowest confidence",
+          "description": "Optional. The response adds confident: whether the answer's confidence reached this. The answer itself comes back either way."
+        },
         "with_attributes": {
           "name": "With attributes",
           "description": "Off sends each picked entity's state, unit, device class and area. On adds every other attribute too. Location and picture attributes are never sent."
@@ -920,7 +959,7 @@
         },
         "questions": {
           "name": "Questions",
-          "description": "Your own key per question, then its type (noul, choice, score or box), its instructions, and criteria for choice and score. A noul may add a cutoff, and its answer then carries a verdict. The keys come back as the keys of the answers."
+          "description": "Your own key per question, then its type (noul, choice, score or box), its instructions, and criteria for choice and score. A noul may add a cutoff, and its answer then carries a verdict. A choice or score may add min_confidence, and its answer then carries confident. The keys come back as the keys of the answers."
         },
         "window": {
           "name": "Window",

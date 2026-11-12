@@ -34,9 +34,11 @@ from .const import (
     CONF_ADVANCED,
     CONF_BRIEF,
     CONF_CUTOFF,
+    CONF_FALLBACK,
     CONF_HIGH,
     CONF_INSTRUCTIONS,
     CONF_LOW,
+    CONF_MIN_CONFIDENCE,
     CONF_NOTE,
     CONF_OPTIONS,
     CONF_RELEASE,
@@ -71,7 +73,15 @@ from .const import (
 )
 from .preview import describe_sharing, describe_window, draft_state, trial
 from .schema import EVENT_FILTER_SCHEMA
-from .watches import cutoff_from, is_own_event, options_from, release_from, scale_from
+from .watches import (
+    cutoff_from,
+    fallback_from,
+    is_own_event,
+    min_confidence_from,
+    options_from,
+    release_from,
+    scale_from,
+)
 
 # Errors that belong to no one field, or to a field inside a collapsed
 # section, where nobody would see them.
@@ -140,6 +150,8 @@ _FIELDS: Final[tuple[_Field, ...]] = (
     _Field(CONF_RELEASE, _box(0, 1, step=0.01), kinds=frozenset({TYPE_NOUL})),
     _Field(CONF_OPTIONS, _LINES, required=True, kinds=frozenset({TYPE_CHOICE})),
     _Field(CONF_SCALE, _LINES, required=True, kinds=frozenset({TYPE_SCORE})),
+    _Field(CONF_MIN_CONFIDENCE, _box(0, 1, step=0.01), kinds=frozenset({TYPE_CHOICE, TYPE_SCORE})),
+    _Field(CONF_FALLBACK, sel.TextSelector(), kinds=frozenset({TYPE_CHOICE})),
     _Field(CONF_TARGET, sel.TargetSelector()),
     _Field(CONF_NOTE, sel.TemplateSelector()),
     _Field(CONF_BRIEF, _LINES),
@@ -335,6 +347,11 @@ _RULES: Final[tuple[_Rule, ...]] = (
     # The YAML schema's release_problem() in form shape.
     (_release_alone, CONF_RELEASE, "release_without_cutoff"),
     (_release_over_cutoff, CONF_RELEASE, "release_over_cutoff"),
+    (
+        lambda d: fallback_from(d) is not None and min_confidence_from(d) is None,
+        CONF_FALLBACK,
+        "fallback_needs_floor",
+    ),
     (
         lambda d: (
             d[CONF_TYPE] == TYPE_SCORE
