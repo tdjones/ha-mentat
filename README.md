@@ -6,6 +6,13 @@ typed value: a probability, one option out of a set, or a level on a scale you
 define. It never writes prose, so an automation can act on the answer without
 parsing a sentence.
 
+A question can be about how things are now or about what just happened. A
+[window of events](#windows-of-events) logs state changes and bus events, such
+as a doorbell press, over up to 24 hours and sends that log beside the readings.
+It fills from the recorder at start, can wait for the house to go quiet so a
+burst of changes is judged once, and works out how long each state held so the
+model never subtracts timestamps.
+
 The domain is `mentat`. Because every answer evaluation costs tokens on hosted providers,
 Mentat counts input tokens, estimates the cost, and refuses a request that would
 go over your daily budget before it is sent. There is no budget until you set one
