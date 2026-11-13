@@ -6,7 +6,7 @@ typed value: a probability, one option out of a set, or a level on a scale you
 define. It never writes prose, so an automation can act on the answer without
 parsing a sentence.
 
-The domain is `mentat`. Every answer costs a paid request on hosted providers, so
+The domain is `mentat`. Because every answer evaluation costs tokens on hosted providers,
 Mentat counts input tokens, estimates the cost, and refuses a request that would
 go over your daily budget before it is sent. There is no budget until you set one
 in the entry's options.
@@ -79,7 +79,21 @@ in the options if it bills you.
 
 ## Install
 
-Mentat is not in the HACS default list. Install it by hand:
+Mentat lives on [GitLab](https://gitlab.com/tdjones8081/ha-mentat) and is mirrored
+to [GitHub](https://github.com/tdjones/ha-mentat) for HACS. Report problems on
+GitLab.
+
+### With HACS
+
+Mentat is not in the HACS default list yet. Add it as a custom repository:
+
+1. In HACS, open the menu in the top right corner and pick Custom repositories.
+2. Enter `https://github.com/tdjones/ha-mentat`, pick the Integration type and add it.
+3. Find Mentat in HACS, download it and restart Home Assistant.
+
+HACS offers each release and tells you when a new one is out.
+
+### By hand
 
 1. Copy `custom_components/mentat` from this repository into
    `/config/custom_components/mentat` on your Home Assistant host.

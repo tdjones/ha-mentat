@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a problem on GitLab
+    url: https://gitlab.com/tdjones8081/ha-mentat/-/issues
+    about: Mentat lives on GitLab. This repository is a mirror for HACS.

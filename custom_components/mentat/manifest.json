@@ -2,7 +2,7 @@
   "domain": "mentat",
   "name": "Mentat",
   "after_dependencies": ["recorder"],
-  "codeowners": ["@tdjones8081"],
+  "codeowners": ["@tdjones"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://gitlab.com/tdjones8081/ha-mentat",

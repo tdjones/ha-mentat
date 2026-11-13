@@ -4,8 +4,10 @@ Mentat is a Home Assistant custom integration, domain `mentat`, that asks System
 One decision models typed questions about a house. It talks to TypeSafe's Jev,
 Cloudflare's Clef and any server that speaks either dialect. An answer arrives as a sensor, an
 action response, a `mentat_decision` event or an AI Task result. Runtime code is
-in `custom_components/mentat`. The project lives on GitLab and is installed by
-hand, so `CHANGELOG.md` is the only release note a user reads.
+in `custom_components/mentat`. The project lives on GitLab and is push-mirrored
+to GitHub, where HACS installs it from. `CHANGELOG.md` is the only release note a
+user reads: a tag mirrored to GitHub becomes a release whose notes are that
+version's entry.
 
 ## Money
 
@@ -156,6 +158,8 @@ Its output goes into `docs/measurements.md`.
   window watch waits for the house to go quiet before it asks".
 - No attribution lines and no tool or assistant names.
 - A release bumps `version` in `manifest.json` and dates the `CHANGELOG.md` entry
-  in a commit named `Release x.y.z`. The entry says what changed for the user and
+  in a commit named `Release x.y.z`, tagged `x.y.z` with no `v`.
+  `.github/workflows/release.yml` refuses a tag that differs from the manifest or
+  has no `## x.y.z (date)` entry. The entry says what changed for the user and
   what they must do, if anything.
 - Push, open a merge request or comment on an issue only when the maintainer asks.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Mentat installs through HACS. Add `https://github.com/tdjones/ha-mentat` as a
+  custom repository of type Integration. HACS downloads into the same folder as
+  a copy installed by hand, so entries and watches carry over.
 - A noul's verdict can hold between two numbers. Give the question a `release`
   under its `cutoff`, in YAML or as "Verdict turns off below" in the editor: the
   verdict turns on at or over the cutoff, off under the release, and keeps its
