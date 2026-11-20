@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Any, Literal
 
-from homeassistant.const import ATTR_FRIENDLY_NAME, STATE_ON
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_FRIENDLY_NAME, EVENT_STATE_CHANGED, STATE_ON
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -54,7 +54,7 @@ from .readings import (
     redact,
     span,
 )
-from .watches import EventFilter, WatchConfig, WindowConfig
+from .watches import EventFilter, WatchConfig, WindowConfig, is_own_event
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,6 +213,10 @@ class EventWindow:
     def _listen(self, event_filter: EventFilter) -> CALLBACK_TYPE:
         @callback
         def _heard(event: Event[dict[str, Any]]) -> None:
+            # A filter saved before `*` and state_changed were refused can still
+            # hear Mentat's answers. Logging one would ask again after each.
+            if is_own_event(event.event_type) or self._is_own_change(event):
+                return
             if not matches(event_filter, event.data):
                 return
             # Plain data first, so the redaction sees inside what the bus
@@ -233,6 +237,11 @@ class EventWindow:
             )
 
         return self.hass.bus.async_listen(event_filter.event_type, _heard)
+
+    def _is_own_change(self, event: Event[dict[str, Any]]) -> bool:
+        return event.event_type == EVENT_STATE_CHANGED and is_mentat_entity(
+            self.hass, str(event.data.get(ATTR_ENTITY_ID))
+        )
 
     @callback
     def _target_changed(self, data: TargetStateChangedData) -> None:

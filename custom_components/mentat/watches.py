@@ -24,7 +24,7 @@ from hashlib import sha256
 from typing import Any, Final, Literal, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL
+from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL, EVENT_STATE_CHANGED, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.template import Template
@@ -180,6 +180,17 @@ class WatchConfig:
 def is_own_event(event_type: Any) -> bool:
     """Whether Mentat fires this event type itself, as it does mentat_decision."""
     return str(event_type).startswith(OWN_EVENT_PREFIX)
+
+
+# `*` hears every event on the bus, mentat_decision among them, and every
+# action call with its data. state_changed carries every entity's change, Mentat's
+# own answers too, past the target and its entity limit.
+_EVERYTHING: Final = frozenset({MATCH_ALL, EVENT_STATE_CHANGED})
+
+
+def hears_everything(event_type: Any) -> bool:
+    """Whether a window listening for this event type would hear the whole house."""
+    return str(event_type) in _EVERYTHING
 
 
 def fold_brief(instructions: Any, brief: Any) -> Any:

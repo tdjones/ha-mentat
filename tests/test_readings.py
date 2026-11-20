@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -169,6 +170,77 @@ async def test_records_drop_addresses_but_keep_words_that_contain_the_letters(
         },
     )
     assert attributes == {"hurled": "a word, not an address"}
+
+
+async def test_records_drop_codes_logins_and_places_but_keep_words_that_hold_them(
+    hass: HomeAssistant,
+) -> None:
+    attributes = _attributes_of(
+        hass,
+        "lock.front_door",
+        {
+            "code": "4321",
+            "PIN": "0000",
+            "location": "12 Example Street",
+            "address": "12 Example Street",
+            "ip_address": "192.0.2.20",
+            "gps": [51.4, -0.1],
+            "session": "abc",
+            "x_apikey": "k",
+            "Authorization": "Bearer k",
+            "set_cookie": "c",
+            "wifi_passphrase": "p",
+            "ssh_private_key": "k",
+            "webhook_id": "w",
+            "code_format": "number",
+            "opinion": "locked",
+            "author": "a person",
+            "spinning": False,
+        },
+    )
+    assert attributes == {
+        "code_format": "number",
+        "opinion": "locked",
+        "author": "a person",
+        "spinning": False,
+    }
+
+
+async def test_records_drop_signed_addresses_under_any_key(hass: HomeAssistant) -> None:
+    attributes = _attributes_of(
+        hass,
+        "media_player.lounge",
+        {
+            "media_content_id": "/api/camera_proxy/camera.yard?token=abc",
+            "source": "rtsp://admin:hunter2@192.0.2.20/live",
+            "queue": ["https://192.0.2.20/a.mp3?sig=s", "plain"],
+            "media_title": "Is it raining? yes=no",
+            "media_artist": "media-source://media_source/local/song.mp3",
+            # Not an address anything could open, so nothing to sign.
+            "media_album_name": "http://[::1",
+        },
+    )
+    assert attributes == {
+        "queue": ["plain"],
+        "media_title": "Is it raining? yes=no",
+        "media_artist": "media-source://media_source/local/song.mp3",
+        "media_album_name": "http://[::1",
+    }
+
+
+async def test_records_redact_inside_objects_an_integration_left_in_its_attributes(
+    hass: HomeAssistant,
+) -> None:
+    @dataclass
+    class Camera:
+        name: str
+        access_token: str
+
+    attributes = _attributes_of(
+        hass, "sensor.porch", {"camera": Camera("porch", "zzz"), "seen": {"a", "b"}}
+    )
+    assert attributes["camera"] == {"name": "porch"}
+    assert sorted(attributes["seen"]) == ["a", "b"]
 
 
 async def test_records_redact_nested_mappings_and_lists(hass: HomeAssistant) -> None:

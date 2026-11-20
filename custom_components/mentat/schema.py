@@ -68,7 +68,7 @@ from .const import (
     TYPE_NOUL,
     TYPE_SCORE,
 )
-from .watches import is_own_event, yaml_key
+from .watches import hears_everything, is_own_event, yaml_key
 
 # Anywhere the API takes text it also takes an object or a list. The model reads
 # structure, so a rubric can go in as keys rather than one long sentence.
@@ -210,9 +210,15 @@ _LOOPS: Final = "Mentat fires it after every answer, so the watch would ask agai
 
 
 def _not_own_event(event_type: str) -> str:
-    """An event type a window may log: anything Mentat does not fire itself."""
+    """An event type a window may log: one Mentat does not fire, and not all of them."""
     if is_own_event(event_type):
         raise vol.Invalid(f"a window cannot log {event_type!r}: {_LOOPS}")
+    if hears_everything(event_type):
+        raise vol.Invalid(
+            f"a window cannot log {event_type!r}: it hears every entity or every event,"
+            " Mentat's own answers among them. Give the watch a target for state"
+            " changes, or name the event"
+        )
     return event_type
 
 

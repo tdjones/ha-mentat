@@ -154,6 +154,19 @@ def provider_for(entry_data: Mapping[str, Any]) -> Provider:
     return replace(provider, dialect=dialect, image_format=image_format)
 
 
+def model_offered(provider: Provider, model: str) -> bool:
+    """Whether a request to this provider may name this model.
+
+    A model id has no spaces. Where the address carries {model}, the id becomes
+    part of the request path, so it must be one the provider lists: Workers AI
+    publishes exactly those, and anything else is a typo or, with `..` in it, a
+    path to some other endpoint that the account's key would be sent to.
+    """
+    if not model or any(character.isspace() for character in model):
+        return False
+    return "{model}" not in (provider.base_url or "") or model in provider.models
+
+
 def resolve_url(
     provider: Provider, url: str | None, account_id: str | None, model: str | None
 ) -> str:

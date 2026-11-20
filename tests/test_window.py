@@ -295,6 +295,31 @@ async def test_a_state_changed_event_is_logged_as_plain_data(
     window.async_stop()
 
 
+async def test_a_filter_saved_before_it_was_refused_never_logs_mentat_answers(
+    hass: HomeAssistant,
+) -> None:
+    """A window that logged its own answer would ask again after every answer."""
+    answer = er.async_get(hass).async_get_or_create(
+        "sensor", DOMAIN, "saved_answer", suggested_object_id="saved_answer"
+    )
+    window = await started(
+        hass,
+        window_context(
+            events=(
+                EventFilter(event_type="*", data={"kind": "answer"}),
+                EventFilter(event_type="state_changed", data={"entity_id": answer.entity_id}),
+            )
+        ),
+    )
+    hass.bus.async_fire("mentat_decision", {"kind": "answer"})
+    hass.states.async_set(answer.entity_id, "0.45")
+    hass.bus.async_fire("doorbell", {"kind": "answer"})
+    await hass.async_block_till_done()
+    [heard] = window.entries(dt_util.utcnow())
+    assert (heard.event_type, heard.attributes) == ("*", {"kind": "answer"})
+    window.async_stop()
+
+
 async def test_event_data_nobody_can_encode_goes_as_text(hass: HomeAssistant) -> None:
     class Opaque:
         def __str__(self) -> str:

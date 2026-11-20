@@ -13,6 +13,7 @@ from the `common` or `exceptions` strings and the question can still be saved.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
@@ -79,6 +80,18 @@ async def readable(hass: HomeAssistant, err: HomeAssistantError) -> str:
     if found is None:
         return str(err)
     return found.format(**(err.translation_placeholders or {}))
+
+
+def fenced(text: str) -> str:
+    """The text in a code block that no run of backticks inside it can close.
+
+    The state carries whatever the house says, and a sensor reading three
+    backticks would end a fixed fence and turn the rest into markdown: links,
+    and pictures fetched from wherever they point as soon as the page opens.
+    """
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}\n{text}\n{fence}"
 
 
 def _clip(state: Any) -> str:

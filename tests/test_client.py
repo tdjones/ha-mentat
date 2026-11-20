@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from typing import Any
+from unittest.mock import patch
 
 import aiohttp
 import pytest
@@ -36,6 +37,7 @@ from custom_components.mentat.client import (
     WrongDialectError,
     build_client,
 )
+from custom_components.mentat.const import MAX_REPLY_BYTES
 from custom_components.mentat.pictures import Picture, Pictures
 from custom_components.mentat.providers import PROVIDERS, Dialect, ImageFormat
 
@@ -276,11 +278,12 @@ _ANSWERS = {"door_open": {"type": "noul", "noul": 0.5}}
         {"input_tokens": 12, "output_tokens": None},
         {"input_tokens": "many", "output_tokens": 1},
         {"prompt_tokens": True, "completion_tokens": 1},
+        {"input_tokens": -500, "output_tokens": 1},
     ],
-    ids=["null-input", "null-output", "word", "bool"],
+    ids=["null-input", "null-output", "word", "bool", "negative"],
 )
 @pytest.mark.parametrize("dialect", ["typesafe", "clef"])
-async def test_a_usage_count_that_is_not_a_number_is_a_bad_reply(
+async def test_a_usage_count_that_is_not_a_count_is_a_bad_reply(
     session, http, dialect: str, usage: dict[str, Any]
 ) -> None:
     """The budget adds these up, so a reply that cannot say what it cost is refused."""
@@ -296,7 +299,48 @@ async def test_a_usage_count_that_is_not_a_number_is_a_bad_reply(
     else:
         http.post(LOCAL_ENDPOINT, json=reply)
         client = _clef(session)
-    with pytest.raises(JevResponseError, match="not a number"):
+    with pytest.raises(JevResponseError, match="not a count"):
+        await client.ask("ok", QUESTIONS)
+
+
+def _typesafe(session: aiohttp.ClientSession) -> TypeSafeClient:
+    return TypeSafeClient(
+        API_KEY, session=session, base_url="https://api.typesafe.ai", model="jev-latest"
+    )
+
+
+# Each dialect's own reader. A Clef reply goes through json.loads, which takes
+# NaN and 1e999; a quoted "inf" reaches float() in either dialect.
+_NOT_FINITE = [
+    ("clef", '{"answers": {"door_open": {"type": "noul", "noul": NaN}}}'),
+    ("clef", '{"answers": {"door_open": {"type": "noul", "noul": 1e999}}}'),
+    (
+        "clef",
+        '{"answers": {"door_open": {"type": "noul", "noul": 0.5}},'
+        ' "usage": {"input_tokens": 1e999}}',
+    ),
+    ("clef", '{"answers": {"door_open": {"type": "noul", "noul": "inf"}}}'),
+    ("typesafe", '{"answers": {"door_open": {"type": "noul", "noul": "inf"}}}'),
+    ("typesafe", '{"answers": {"door_open": {"type": "noul", "noul": "nan"}}}'),
+]
+
+
+@pytest.mark.parametrize(
+    ("dialect", "text"),
+    _NOT_FINITE,
+    ids=["nan", "overflow", "overflowing-usage", "inf-text", "typesafe-inf", "typesafe-nan"],
+)
+async def test_a_number_that_is_not_finite_is_a_bad_reply(
+    session, http, dialect: str, text: str
+) -> None:
+    """A NaN noul never reaches a cutoff, so the verdict would hold looking answered."""
+    if dialect == "typesafe":
+        http.post(TYPESAFE_URL, text=text)
+        client: Any = _typesafe(session)
+    else:
+        http.post(LOCAL_ENDPOINT, text=text)
+        client = _clef(session)
+    with pytest.raises(JevResponseError, match=r"not finite|not a count"):
         await client.ask("ok", QUESTIONS)
 
 
@@ -444,6 +488,66 @@ async def test_clef_network_failure(session, http) -> None:
     http.post(LOCAL_ENDPOINT, exc=aiohttp.ClientConnectionError("refused"))
     with pytest.raises(JevConnectionError, match="refused"):
         await _clef(session).ask("ok", QUESTIONS)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        aiohttp.ClientConnectionError("refused"),
+        aiohttp.InvalidURL(CF_TEMPLATE.replace("{model}", "clef")),
+        TimeoutError(),
+    ],
+    ids=["refused", "naming-the-url", "timeout"],
+)
+async def test_clef_failure_names_the_server_without_the_account_id(
+    session, http, error: Exception
+) -> None:
+    http.post(CF_TEMPLATE.replace("{model}", "clef"), exc=error)
+    with pytest.raises(JevConnectionError) as caught:
+        await _clef(session, url=CF_TEMPLATE, api_key=API_KEY).ask("ok", QUESTIONS, model="clef")
+    assert ACCOUNT_ID not in str(caught.value)
+    assert "https://api.cloudflare.com" in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+async def test_clef_follows_no_redirect(session, http, status: int) -> None:
+    http.post(LOCAL_ENDPOINT, status=status, headers={"Location": "https://192.0.2.9/steal"})
+    with pytest.raises(JevResponseError, match="follows no redirect") as caught:
+        await _clef(session).ask("ok", QUESTIONS)
+    assert caught.value.status == status
+    assert len(http.mock_calls) == 1
+
+
+async def test_clef_asks_the_session_not_to_follow_a_redirect(session, http) -> None:
+    # The mocker never follows one, so the request itself has to say so.
+    http.post(LOCAL_ENDPOINT, json=PLAIN_REPLY)
+    with patch.object(session, "post", wraps=session.post) as post:
+        await _clef(session).ask("ok", QUESTIONS)
+    assert post.call_args.kwargs["allow_redirects"] is False
+
+
+async def test_clef_refuses_a_reply_too_large_to_be_an_answer(session, http) -> None:
+    http.post(LOCAL_ENDPOINT, text=" " * (MAX_REPLY_BYTES + 1))
+    with pytest.raises(JevResponseError, match="over"):
+        await _clef(session).ask("ok", QUESTIONS)
+
+
+async def test_clef_reads_a_reply_up_to_the_limit(session, http) -> None:
+    body = json.dumps(PLAIN_REPLY)
+    http.post(LOCAL_ENDPOINT, text=body + " " * (MAX_REPLY_BYTES - len(body)))
+    response = await _clef(session).ask("ok", QUESTIONS)
+    assert response.answers["door_open"].value == 0.12
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["../../../../zones", "clef/../../zones", "%2e%2e", "..", "clef?x=1", "clef#x", ""],
+)
+async def test_clef_refuses_a_model_that_leaves_its_path_segment(session, http, model: str) -> None:
+    client = _clef(session, url=CF_TEMPLATE, api_key=API_KEY)
+    with pytest.raises(JevValidationError, match="request path"):
+        client.endpoint(model)
+    assert http.mock_calls == []
 
 
 async def test_clef_timeout(session, http) -> None:

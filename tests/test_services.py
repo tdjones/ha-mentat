@@ -11,6 +11,8 @@ import voluptuous as vol
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.core import Context, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from jevclient import (
@@ -449,11 +451,10 @@ async def test_ask_with_a_window_and_no_recorder_sends_an_empty_log(
         ("choice", {"options": ["flour"]}, "options_count"),
         ("score", {"scale": ["Dry"]}, "scale_count"),
         ("noul", {"note": None}, "nothing_to_read"),
-        ("noul", {"note": "{{ 34 / 0 }}"}, "template_failed"),
         ("noul", {"pictures": ["switch.porch_light"]}, "not_an_image_source"),
         ("noul", {"pictures": [f"camera.c{n}" for n in range(5)]}, "too_many_images"),
     ],
-    ids=["one-option", "one-level", "nothing", "bad-template", "switch", "five-cameras"],
+    ids=["one-option", "one-level", "nothing", "switch", "five-cameras"],
 )
 async def test_action_with_a_bad_field_is_refused_unsent(
     hass: HomeAssistant,
@@ -678,6 +679,51 @@ async def test_noul_with_a_refused_key_starts_reauth(
     assert sources == [SOURCE_REAUTH]
 
 
+async def test_a_key_refused_for_a_model_the_caller_named_starts_no_reauth(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    fake_client.ask.side_effect = JevAuthError("not for this model", status=403)
+    with pytest.raises(HomeAssistantError) as caught:
+        await act(hass, "noul", PLAIN | {"model": "jev-preview"})
+    assert caught.value.translation_key == "key_refused"
+    await hass.async_block_till_done()
+    assert hass.config_entries.flow.async_progress() == []
+
+
+@pytest.mark.parametrize("provider_key", ["cloudflare"], indirect=True)
+@pytest.mark.parametrize(
+    "model", ["../../../../zones", "llama-4", "clef flash"], ids=["traversal", "unlisted", "space"]
+)
+async def test_a_model_the_provider_does_not_list_is_refused_unsent(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock, model: str
+) -> None:
+    with pytest.raises(ServiceValidationError) as caught:
+        await act(hass, "noul", PLAIN | {"model": model})
+    assert caught.value.translation_key == "model_not_offered"
+    assert caught.value.translation_placeholders == {
+        "model": model,
+        "provider": "Cloudflare Workers AI",
+    }
+    assert only_the_probe_was_sent(fake_client)
+
+
+@pytest.mark.parametrize("provider_key", ["cloudflare"], indirect=True)
+async def test_a_model_the_provider_lists_is_asked_with(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    fake_client.ask.return_value = reply(answer=NoulAnswer(noul=0.5))
+    await act(hass, "noul", PLAIN | {"model": "clef"})
+    assert fake_client.ask.await_args.kwargs["model"] == "clef"
+
+
+async def test_a_model_with_a_space_is_refused_for_any_provider(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    with pytest.raises(ServiceValidationError) as caught:
+        await act(hass, "noul", PLAIN | {"model": "jev latest"})
+    assert caught.value.translation_key == "model_not_offered"
+
+
 async def test_score_answered_as_a_choice_is_refused(
     hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
 ) -> None:
@@ -740,32 +786,45 @@ async def test_registering_twice_keeps_the_six_actions(
 TEMPLATED = {"note": "{{ 17 * 2 }} C", "instructions": "Cool?"}
 
 
-async def test_template_from_an_automation_or_an_admin_is_rendered(
+@pytest.mark.parametrize("who", ["automation", "admin", "read-only", "vanished"])
+async def test_a_note_goes_as_written_whoever_calls(
     hass: HomeAssistant,
     loaded: MockConfigEntry,
     fake_client: MagicMock,
     hass_admin_user: MockUser,
-) -> None:
-    fake_client.ask.return_value = reply(answer=NoulAnswer(noul=0.5))
-    await act(hass, "noul", TEMPLATED)
-    assert sent(fake_client)[0] == "34 C"
-    fake_client.ask.reset_mock()
-    await act(hass, "noul", TEMPLATED, hass_admin_user.id)
-    assert sent(fake_client)[0] == "34 C"
-
-
-@pytest.mark.parametrize("who", ["read-only", "vanished"])
-async def test_template_from_a_limited_user_goes_as_written(
-    hass: HomeAssistant,
-    loaded: MockConfigEntry,
-    fake_client: MagicMock,
     hass_read_only_user: MockUser,
     who: str,
 ) -> None:
+    # A script renders its data before the call, so braces left in a note came
+    # from what it rendered: an MQTT payload, a webhook, a calendar title.
     fake_client.ask.return_value = reply(answer=NoulAnswer(noul=0.5))
-    user_id = hass_read_only_user.id if who == "read-only" else "deleted-user-7"
+    user_id = {
+        "automation": None,
+        "admin": hass_admin_user.id,
+        "read-only": hass_read_only_user.id,
+        "vanished": "deleted-user-7",
+    }[who]
     await act(hass, "noul", TEMPLATED, user_id)
     assert sent(fake_client)[0] == "{{ 17 * 2 }} C"
+
+
+async def test_a_template_a_script_rendered_is_not_rendered_again(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    # The payload is outside data, written by whoever can publish to the topic.
+    hass.states.async_set("sensor.mqtt_payload", "{{ states('sensor.alarm_code') }}")
+    hass.states.async_set("sensor.alarm_code", "4321")
+    fake_client.ask.return_value = reply(answer=NoulAnswer(noul=0.5))
+    step = {
+        "action": "mentat.noul",
+        "data": {"note": "{{ states('sensor.mqtt_payload') }}", "instructions": "An error?"},
+        "response_variable": "answer",
+    }
+    assert await async_setup_component(
+        hass, "script", {"script": {"ask_about_payload": {"sequence": [step]}}}
+    )
+    await hass.services.async_call("script", "ask_about_payload", blocking=True)
+    assert sent(fake_client)[0] == "{{ states('sensor.alarm_code') }}"
 
 
 @pytest.mark.parametrize(
@@ -847,6 +906,22 @@ async def test_source_that_is_no_picture_from_a_limited_user_fails_at_the_fetch(
     assert caught.value.translation_key == "not_an_image_source"
 
 
+async def test_target_by_registry_id_is_checked_without_failing_the_call(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    registered = er.async_get(hass).async_get_or_create(
+        "cover", "test", "garage_door", suggested_object_id="garage_door"
+    )
+    hass.states.async_set(registered.entity_id, "open")
+    user = reader_of(hass, DRYER)
+    with pytest.raises(ServiceValidationError) as caught:
+        await act(hass, "noul", {"entity_id": registered.id, "instructions": "Cool?"}, user.id)
+    # The caller's own words come back, never the entity id behind them.
+    assert caught.value.translation_key == "entity_not_permitted"
+    assert caught.value.translation_placeholders == {"entity_id": registered.id}
+    assert only_the_probe_was_sent(fake_client)
+
+
 async def test_target_the_user_may_read_is_sent(
     hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
 ) -> None:
@@ -857,7 +932,7 @@ async def test_target_the_user_may_read_is_sent(
     assert sent(fake_client)[0]["entities"][0]["entity_id"] == DRYER
 
 
-async def test_group_target_with_a_hidden_member_is_refused_naming_the_member(
+async def test_group_target_with_a_hidden_member_is_refused_without_naming_it(
     hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
 ) -> None:
     hass.states.async_set(DRYER, "31")
@@ -866,7 +941,26 @@ async def test_group_target_with_a_hidden_member_is_refused_naming_the_member(
     user = reader_of(hass, DRYER, "group.garage")
     with pytest.raises(ServiceValidationError) as caught:
         await act(hass, "noul", {"entity_id": "group.garage", "instructions": "Cool?"}, user.id)
-    assert caught.value.translation_placeholders == {"entity_id": "cover.garage_door"}
+    assert caught.value.translation_key == "target_not_permitted"
+    assert "cover.garage_door" not in str(caught.value.translation_placeholders)
+    assert only_the_probe_was_sent(fake_client)
+
+
+async def test_area_target_with_a_hidden_entity_is_refused_without_naming_it(
+    hass: HomeAssistant, loaded: MockConfigEntry, fake_client: MagicMock
+) -> None:
+    garage = ar.async_get(hass).async_create("Garage")
+    for entity_id in (DRYER, "cover.garage_door"):
+        domain, object_id = entity_id.split(".")
+        registered = er.async_get(hass).async_get_or_create(
+            domain, "test", object_id, suggested_object_id=object_id
+        )
+        er.async_get(hass).async_update_entity(registered.entity_id, area_id=garage.id)
+        hass.states.async_set(registered.entity_id, "on")
+    user = reader_of(hass, DRYER)
+    with pytest.raises(ServiceValidationError) as caught:
+        await act(hass, "noul", {"area_id": garage.id, "instructions": "Cool?"}, user.id)
+    assert caught.value.translation_key == "target_not_permitted"
     assert only_the_probe_was_sent(fake_client)
 
 

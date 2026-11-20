@@ -71,11 +71,12 @@ from .const import (
     TYPE_NOUL,
     TYPE_SCORE,
 )
-from .preview import describe_sharing, describe_window, draft_state, trial
+from .preview import describe_sharing, describe_window, draft_state, fenced, trial
 from .schema import EVENT_FILTER_SCHEMA
 from .watches import (
     cutoff_from,
     fallback_from,
+    hears_everything,
     is_own_event,
     min_confidence_from,
     options_from,
@@ -275,6 +276,14 @@ def _logs_own_event(data: Mapping[str, Any]) -> bool:
     )
 
 
+def _logs_everything(data: Mapping[str, Any]) -> bool:
+    events = _bus_events(data)
+    return isinstance(events, list) and any(
+        isinstance(event, Mapping) and hears_everything(event.get("event_type", ""))
+        for event in events
+    )
+
+
 def _events_malformed(data: Mapping[str, Any]) -> bool:
     try:
         vol.Schema([EVENT_FILTER_SCHEMA])(_bus_events(data))
@@ -324,6 +333,7 @@ _RULES: Final[tuple[_Rule, ...]] = (
     ),
     # Ahead of the schema check, which refuses these too, so the error says why.
     (lambda d: _windowed(d) and _logs_own_event(d), BASE, "window_event_is_own"),
+    (lambda d: _windowed(d) and _logs_everything(d), BASE, "window_event_too_wide"),
     (lambda d: _windowed(d) and _events_malformed(d), BASE, "window_events_invalid"),
     (lambda d: not _has_target(d) and not d.get(CONF_NOTE), BASE, "nothing_to_read"),
     (
@@ -445,7 +455,7 @@ class MentatQuestionSubentryFlow(ConfigSubentryFlow):
             step_id="preview",
             data_schema=vol.Schema({}),
             description_placeholders={
-                "state": shown,
+                "state": fenced(shown),
                 "grouping": "\n\n".join(notes),
                 "answer": await trial(self.hass, entry, self._draft, state),
             },

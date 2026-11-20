@@ -34,6 +34,7 @@ from homeassistant.helpers.json import json_encoder_default
 from homeassistant.helpers.target import TargetSelection, async_extract_referenced_entity_ids
 from homeassistant.util import dt as dt_util
 from homeassistant.util.json import json_loads
+from yarl import URL
 
 from .const import DOMAIN, MAX_TARGET_ENTITIES
 
@@ -43,7 +44,8 @@ from .const import DOMAIN, MAX_TARGET_ENTITIES
 _ALWAYS: Final = (ATTR_DEVICE_CLASS, ATTR_UNIT_OF_MEASUREMENT)
 # Never sent, even when every attribute is asked for. A camera's access token is
 # a live credential, a picture URL often carries one, and a location is where a
-# person is. None of them helps judge a state.
+# person is. None of them helps judge a state. The short words are whole keys
+# only: as parts they would drop `opinion`, `zip_code_valid` or `author`.
 _NEVER: Final = frozenset(
     {
         "access_token",
@@ -52,6 +54,17 @@ _NEVER: Final = frozenset(
         "latitude",
         "longitude",
         "gps_accuracy",
+        "gps",
+        "location",
+        "coordinates",
+        "address",
+        "ip_address",
+        "mac_address",
+        "email",
+        "code",
+        "pin",
+        "session",
+        "session_id",
     }
 )
 # Nor anything whose name says it is one of those, whatever integration wrote it:
@@ -60,11 +73,20 @@ _NEVER: Final = frozenset(
 _NEVER_PARTS: Final = (
     "token",
     "password",
+    "passwd",
+    "passphrase",
+    "passcode",
     "secret",
     "picture",
     "image_url",
     "credential",
     "api_key",
+    "apikey",
+    "private_key",
+    "authorization",
+    "bearer",
+    "cookie",
+    "webhook",
 )
 # And no address of any kind: a camera stream, a webhook or a signed download
 # link is often a credential in all but name, and the model cannot open one.
@@ -96,17 +118,39 @@ def private(key: Any) -> bool:
     )
 
 
+def signed(value: Any) -> bool:
+    """Whether a value is an address that carries a login or a query.
+
+    A signed link such as `/api/camera_proxy/camera.yard?token=...` is a
+    credential under whatever key holds it, `media_content_id` among them. Text
+    with a space in it is a sentence, not an address.
+    """
+    if not isinstance(value, str) or ("://" not in value and "?" not in value):
+        return False
+    if any(character.isspace() for character in value):
+        return False
+    try:
+        url = URL(value)
+    except ValueError:
+        return False
+    return bool(url.user or url.password or url.query_string)
+
+
 def redact(value: Any) -> Any:
-    """The value with every private key dropped, at any depth.
+    """The value with every private key and every signed address dropped, at any depth.
 
     Event data and attributes nest: a doorbell event can carry
     `{"snapshot": {"url": ...}}` or a list of such records, and a check of the
     top level alone would send them.
     """
     if isinstance(value, Mapping):
-        return {key: redact(item) for key, item in value.items() if not private(key)}
+        return {
+            key: redact(item)
+            for key, item in value.items()
+            if not private(key) and not signed(item)
+        }
     if isinstance(value, list | tuple):
-        return [redact(item) for item in value]
+        return [redact(item) for item in value if not signed(item)]
     return value
 
 
@@ -140,7 +184,7 @@ def attribute_subset(attributes: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: redact(value)
         for key, value in attributes.items()
-        if key not in _CARRIED and not private(key)
+        if key not in _CARRIED and not private(key) and not signed(value)
     }
 
 
@@ -200,7 +244,9 @@ class Reading:
             unit=given.get(ATTR_UNIT_OF_MEASUREMENT),
             device_class=given.get(ATTR_DEVICE_CLASS),
             area=registries.area_of(state.entity_id),
-            attributes=attribute_subset(given) if with_attributes else None,
+            # Plain data first, as a window does: redact() walks mappings and
+            # lists, and would pass an object with a token inside it whole.
+            attributes=attribute_subset(json_safe(given)) if with_attributes else None,
         )
 
     def as_record(self) -> dict[str, Any]:

@@ -37,17 +37,12 @@ from homeassistant.core import (
     ServiceResponse,
     SupportsResponse,
 )
-from homeassistant.exceptions import (
-    HomeAssistantError,
-    ServiceValidationError,
-    TemplateError,
-)
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.target import (
     TargetSelection,
     async_extract_referenced_entity_ids,
 )
-from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 from jevclient import (
     MAX_CHOICE_OPTIONS,
@@ -130,6 +125,7 @@ from .pictures import (
     is_entity_source,
     is_path_source,
 )
+from .providers import model_offered
 from .readings import async_state
 from .schema import ENTRY, MIN_CONFIDENCE, PROBABILITY, WINDOW_SCHEMA, WORDING, floor_problem
 from .watches import answer_as_dict, options_from, question_from_mapping, window_from_mapping
@@ -311,7 +307,10 @@ async def async_ask(
         with ledger.reserve(estimate):
             response = await runtime.client.ask(state, questions, model=model, pictures=pictures)
     except JevError as err:
-        if isinstance(err, JevAuthError):
+        # A model the caller named can be refused with 401 or 403 for that model
+        # alone. The entry's own model will say on its next request whether the
+        # key itself is bad.
+        if isinstance(err, JevAuthError) and model is None:
             entry.async_start_reauth(hass)
         raise _refusal(err, entry, questions, model) from err
     ledger.record(response.usage.input_tokens, body, picture_tokens)
@@ -441,8 +440,17 @@ def _check_caller_may_read(
         selected = async_extract_referenced_entity_ids(
             hass, TargetSelection(dict(selector)), expand_group=True
         )
+        # As written: a registry id in place of an entity id matches nothing
+        # here, so its entity is refused without being named.
+        named = {str(item) for item in cv.ensure_list(selector.get("entity_id"))}
         for entity_id in sorted(selected.referenced | selected.indirectly_referenced):
-            refuse_entity(entity_id)
+            if entity_id in named:
+                refuse_entity(entity_id)
+            elif user is None or not user.permissions.check_entity(entity_id, POLICY_READ):
+                # An id the caller did not write came out of an area, a device,
+                # a label or a group, and naming it would show them an entity
+                # their permissions hide.
+                raise _invalid("target_not_permitted")
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,35 +466,23 @@ class _Call:
     with_attributes: bool
     window: Mapping[str, Any] | None
 
-    def written_note(self, hass: HomeAssistant) -> Any:
-        """The note, with a template rendered when the caller may read the house.
-
-        A script renders its action data before the call, so a template only
-        arrives unrendered from the developer tools or the REST API. Rendering
-        it reads whatever entities it names, which would hand a limited user
-        what their permissions hide. Their template goes to the model as text.
-        """
-        note = self.note
-        marked = isinstance(note, str) and ("{{" in note or "{%" in note)
-        if not (marked and self.caller.unlimited):
-            return note
-        try:
-            return Template(note, hass).async_render(parse_result=False)
-        except TemplateError as err:
-            raise _invalid("template_failed", reason=str(err)) from err
-
 
 async def _read_call(hass: HomeAssistant, call: ServiceCall) -> _Call:
     data = call.data
     # mentat.box names one picture; every other action has a list, empty by default.
     sources = data[CONF_PICTURES] if CONF_PICTURES in data else [data[CONF_PICTURE]]
+    entry = resolve_entry(hass, data.get(ATTR_CONFIG_ENTRY))
+    model = data.get(CONF_MODEL)
+    provider = entry.runtime_data.provider
+    if model is not None and not model_offered(provider, model):
+        raise _invalid("model_not_offered", model=model, provider=provider.title)
     return _Call(
-        entry=resolve_entry(hass, data.get(ATTR_CONFIG_ENTRY)),
+        entry=entry,
         caller=await _caller(hass, call),
         target={key: data[key] for key in TARGET_KEYS if data.get(key)},
         note=data.get(CONF_NOTE),
         pictures=tuple(sources),
-        model=data.get(CONF_MODEL),
+        model=model,
         with_attributes=data.get(CONF_WITH_ATTRIBUTES, False),
         window=data.get(CONF_WINDOW),
     )
@@ -513,7 +509,11 @@ async def _send(
         raise _invalid("window_without_target")
     _check_caller_may_read(hass, request.caller, request.pictures, request.target)
     pictures = await _fetch(hass, request) if request.pictures else None
-    note = request.written_note(hass)
+    # Taken as written. A script or an automation renders its data before the
+    # call, so a template here was rendered once already, and its text can hold
+    # whatever an MQTT payload or a webhook put there. Rendering it again would
+    # run that text as a template that may read any entity.
+    note = request.note
     if request.window is None:
         built = async_state(hass, note, request.target, with_attributes=request.with_attributes)
     else:

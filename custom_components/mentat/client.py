@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import dataclasses
 import json
+import math
+import re
 import time
 from collections.abc import Mapping
 from typing import Any, Final, Protocol
@@ -32,8 +35,9 @@ from jevclient import (
     Usage,
 )
 from jevclient.models import parse_answer
+from yarl import URL
 
-from .const import MAX_IMAGES, REQUEST_TIMEOUT_SECONDS, SYSTEMONE_PATH
+from .const import MAX_IMAGES, MAX_REPLY_BYTES, REQUEST_TIMEOUT_SECONDS, SYSTEMONE_PATH
 from .pictures import MIME_TYPE, Picture, Pictures
 from .providers import Dialect, ImageFormat, Provider, resolve_url
 
@@ -47,6 +51,11 @@ _NO_ANSWERS: Final = "the reply carries no answers object"
 
 # The body keys this module writes. `extra` cannot replace them.
 _RESERVED: Final = frozenset({"model", "state", "questions", "images"})
+
+# What a model id may hold where it fills {model} in a path: RFC 3986's
+# unreserved characters. A `/`, a `%` or a `?` would let it name another
+# endpoint, which yarl reaches by folding `..` away before the key is sent.
+_PATH_SEGMENT: Final = re.compile(r"[A-Za-z0-9._~-]+")
 
 # Workers AI error codes (developers.cloudflare.com/workers-ai/platform/errors,
 # read 2026-10-30) and the Cloudflare API's own authentication codes.
@@ -155,7 +164,7 @@ class TypeSafeClient:
         assets = pictures.assets if pictures else {}
         _check_image_count(len(assets))
         try:
-            return await self._client.ask(state, questions, model=model, assets=assets or None)
+            response = await self._client.ask(state, questions, model=model, assets=assets or None)
         except ValueError as err:
             # jevclient checks a few things before sending and raises ValueError.
             # Callers handle JevError only.
@@ -167,6 +176,7 @@ class TypeSafeClient:
                     "Clef server's reply reads to the TypeSafe dialect"
                 ) from err
             raise
+        return _finite(response)
 
     def body_size(
         self, state: StateType, questions: Mapping[str, Question], *, model: str | None = None
@@ -221,10 +231,16 @@ class ClefClient:
         return Dialect.CLEF
 
     def endpoint(self, model: str) -> str:
-        """The URL one request goes to."""
-        if "{model}" in self._url:
-            return self._url.replace("{model}", model)
-        return f"{self._url}{SYSTEMONE_PATH}"
+        """The URL one request goes to, or JevValidationError for a model that
+        would not stay one segment of its path.
+        """
+        if "{model}" not in self._url:
+            return f"{self._url}{SYSTEMONE_PATH}"
+        if not _PATH_SEGMENT.fullmatch(model) or not model.strip("."):
+            raise JevValidationError(
+                f"model {model!r} cannot be part of the request path; nothing was sent"
+            )
+        return self._url.replace("{model}", model)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -290,29 +306,82 @@ class ClefClient:
         model = model or self._model
         body = self.build_body(state, questions, model, pictures)
         url = self.endpoint(model)
+        # The path of a Workers AI address carries the account id, which
+        # diagnostics keeps out of sight, so an error names the server alone.
+        server = str(URL(url).origin())
         # Encoded here rather than by the session, so the bytes sent are the bytes
         # body_size() measured whichever session this client was given.
         encoded = json_bytes(body)
         started = time.monotonic()
         try:
+            # A redirect would post the house and its pictures somewhere the
+            # entry never named. An answer is never a 3xx.
             async with self._session.post(
-                url, data=encoded, headers=self._headers(), timeout=self._timeout
+                url,
+                data=encoded,
+                headers=self._headers(),
+                timeout=self._timeout,
+                allow_redirects=False,
             ) as response:
-                text = await response.text()
                 status = response.status
                 retry_after = response.headers.get("Retry-After")
+                raw = await _read_capped(response.content)
         except aiohttp.ClientError as err:
-            raise JevConnectionError(f"request to {url} failed: {err}") from err
+            reason = str(err).replace(url, server)
+            raise JevConnectionError(f"request to {server} failed: {reason}") from err
         except TimeoutError as err:
-            raise JevConnectionError(f"no answer from {url} within {self._timeout.total}s") from err
+            raise JevConnectionError(
+                f"no answer from {server} within {self._timeout.total}s"
+            ) from err
         latency_ms = (time.monotonic() - started) * 1000
+        # JSON is UTF-8 (RFC 8259), whatever charset a proxy's header claims.
+        text = raw.decode("utf-8", errors="replace")
         data = _loads(text)
-        if status >= 400:
+        if status >= 300:
             raise _error_for(status, data, text, retry_after)
-        return _parse(_unwrap(data, retry_after), model, latency_ms)
+        return _finite(_parse(_unwrap(data, retry_after), model, latency_ms))
 
     async def async_close(self) -> None:
         """The session is Home Assistant's, so there is nothing of ours to close."""
+
+
+async def _read_capped(stream: aiohttp.StreamReader) -> bytes:
+    """The reply's bytes, or JevResponseError past MAX_REPLY_BYTES.
+
+    StreamReader.read(n) hands back whatever has arrived, up to n bytes, so it
+    is read until the end rather than once.
+    """
+    data = bytearray()
+    while chunk := await stream.read(MAX_REPLY_BYTES + 1 - len(data)):
+        data += chunk
+        if len(data) > MAX_REPLY_BYTES:
+            raise JevResponseError(
+                f"the reply is over {MAX_REPLY_BYTES} bytes, far more than any answer; "
+                "the rest was not read"
+            )
+    return bytes(data)
+
+
+def _finite(response: JevResponse) -> JevResponse:
+    """The response, or JevResponseError when an answer holds NaN or infinity.
+
+    Python's JSON reader takes NaN, Infinity and 1e999. A verdict compares a
+    noul with its cutoff, and every comparison with NaN is false, so the verdict
+    would stay where it was while looking answered.
+    """
+    for key, answer in response.answers.items():
+        if not _all_finite(dataclasses.asdict(answer)):
+            raise JevResponseError(f"answer {key!r} holds a number that is not finite")
+    return response
+
+
+def _all_finite(value: Any) -> bool:
+    # An answer is floats, strings and dicts of them; it holds no list.
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, Mapping):
+        return all(_all_finite(item) for item in value.values())
+    return True
 
 
 def _loads(text: str) -> Any:
@@ -385,6 +454,12 @@ def _error_for(status: int | None, data: Any, text: str, retry_after: str | None
             return JevValidationError(
                 f"the request was rejected as invalid: {detail}", status=status
             )
+    if status is not None and 300 <= status < 400:
+        return JevResponseError(
+            f"HTTP {status}: the server sent the request to another address, and "
+            "Mentat follows no redirect; give the entry the address itself",
+            status=status,
+        )
     if status in (401, 403):
         return JevAuthError(f"the credential was rejected: {detail}", status=status)
     if status in (400, 413, 422):
@@ -434,7 +509,7 @@ def _parse(data: Any, model: str, latency_ms: float) -> JevResponse:
 
 
 def _token_count(usage: Mapping[str, Any], key: str, openai_key: str) -> int:
-    """A usage count, or JevResponseError for one that is not a number.
+    """A usage count, or JevResponseError for one that is not a count.
 
     The budget adds this up, so a reply that bills null or "many" tokens is a
     reply that cannot be read, not a free call.
@@ -443,11 +518,13 @@ def _token_count(usage: Mapping[str, Any], key: str, openai_key: str) -> int:
     if isinstance(value, bool):
         value = None
     try:
-        return int(value)
-    except (TypeError, ValueError):
-        raise JevResponseError(
-            f"the reply's usage gives {key} as {value!r}, not a number"
-        ) from None
+        count = int(value)
+    except (TypeError, ValueError, OverflowError):
+        count = -1
+    # A negative count would hand tokens back to the day's budget.
+    if count < 0:
+        raise JevResponseError(f"the reply's usage gives {key} as {value!r}, not a count")
+    return count
 
 
 def build_client(

@@ -232,7 +232,7 @@ async def test_choice_form_sends_its_lines_as_criteria_and_draws_the_winner_firs
     shown = preview["description_placeholders"]
     assert "The model leans to **milk**. Confidence in this answer: 0.62." in shown["answer"]
     assert shown["answer"].index("**milk**") < shown["answer"].index("butter")
-    assert shown["state"] == "Half a pint left, butter untouched"
+    assert shown["state"] == "```\nHalf a pint left, butter untouched\n```"
     asked = fake_client.ask.await_args.args[1]["preview"]
     assert isinstance(asked, Choice)
     assert asked.criteria == {"butter": "the yellow block", "milk": None}
@@ -324,6 +324,22 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
         ),
         (
             "noul",
+            {
+                "target": {"entity_id": [FREEZER]},
+                "window": WINDOW | {"window_events": [{"event_type": "*"}]},
+            },
+            {"base": "window_event_too_wide"},
+        ),
+        (
+            "noul",
+            {
+                "target": {"entity_id": [FREEZER]},
+                "window": WINDOW | {"window_events": [{"event_type": "state_changed"}]},
+            },
+            {"base": "window_event_too_wide"},
+        ),
+        (
+            "noul",
             {"target": {"entity_id": [FREEZER]}, "release": 0.3},
             {"release": "release_without_cutoff"},
         ),
@@ -350,6 +366,8 @@ async def test_score_form_sends_its_levels_in_order_and_folds_the_brief(
         "settle-long",
         "events-bad",
         "events-own",
+        "events-everything",
+        "events-state-changed",
         "release-alone",
         "release-over",
         "fallback-alone",

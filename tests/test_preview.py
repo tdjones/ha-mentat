@@ -30,6 +30,7 @@ from custom_components.mentat.preview import (
     Rules,
     describe_window,
     draw_answer,
+    fenced,
     readable,
     sentences,
     trial,
@@ -163,7 +164,7 @@ async def test_preview_of_a_broken_template_shows_why_and_asks_nothing(
     entry = await utility_room(hass)
     shown = await preview_of(hass, entry, note="{{ 9 // 0 }} C")
     placeholders = shown["description_placeholders"]
-    assert placeholders["state"].startswith("The note's template has an error:")
+    assert placeholders["state"].startswith("```\nThe note's template has an error:")
     assert placeholders["answer"] == "No trial yet. Pick entities or write a note first."
     assert fake_client.ask.await_count == 1
 
@@ -173,7 +174,9 @@ async def test_preview_of_a_target_that_is_gone_shows_the_sentence(
 ) -> None:
     entry = await utility_room(hass)
     shown = await preview_of(hass, entry, target={"area_id": ["demolished_shed"]})
-    assert shown["description_placeholders"]["state"].startswith("Nothing by these names exists:")
+    assert shown["description_placeholders"]["state"].startswith(
+        "```\nNothing by these names exists:"
+    )
     assert fake_client.ask.await_count == 1
 
 
@@ -184,7 +187,9 @@ async def test_preview_of_a_long_state_counts_what_it_cut(
     fake_client.ask.return_value = answered(preview=NoulAnswer(noul=0.6))
     with patch("custom_components.mentat.preview.PREVIEW_CHARS", 12):
         shown = await preview_of(hass, entry, note="frost-" * 7)
-    assert shown["description_placeholders"]["state"] == "frost-frost-\n... 30 more characters"
+    assert shown["description_placeholders"]["state"] == (
+        "```\nfrost-frost-\n... 30 more characters\n```"
+    )
 
 
 @pytest.mark.parametrize(
@@ -346,3 +351,17 @@ async def test_describe_window_of_a_state_without_one_is_none(
     hass: HomeAssistant, state: Any
 ) -> None:
     assert await describe_window(hass, state) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "fence"),
+    [
+        ('{"note": "plain"}', "```"),
+        ("```\n![x](https://192.0.2.9/p.png)", "````"),
+        ("a ````` run", "``````"),
+    ],
+    ids=["plain", "closing-fence", "long-run"],
+)
+def test_the_state_is_fenced_past_any_backticks_it_holds(text: str, fence: str) -> None:
+    shown = fenced(text)
+    assert shown == f"{fence}\n{text}\n{fence}"

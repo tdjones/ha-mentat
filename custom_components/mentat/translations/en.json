@@ -158,14 +158,14 @@
     "no_entry": {
       "message": "No loaded Mentat entry matches. Add the integration, or pick a loaded entry under Config entry."
     },
+    "model_not_offered": {
+      "message": "{provider} cannot be asked with model {model}. Name one of the models the integration's setup offers for it."
+    },
     "entry_ambiguous": {
       "message": "Mentat cannot choose between {entries}, and each has its own key and budget. Name one under Config entry."
     },
     "nothing_to_read": {
       "message": "The action has nothing to send. Give it a note, a target or a picture."
-    },
-    "template_failed": {
-      "message": "Template error in the note: {reason}"
     },
     "answer_mismatch": {
       "message": "The server answered a {question_type} question with a {got}."
@@ -220,6 +220,9 @@
     },
     "entity_not_permitted": {
       "message": "You do not have permission to read {entity_id}, so it cannot be sent."
+    },
+    "target_not_permitted": {
+      "message": "The target takes in entities you do not have permission to read, so it cannot be sent. Pick the entities themselves."
     },
     "too_many_images": {
       "message": "{count} pictures were given and this entry sends at most {limit} per request. Each picture is billed by its pixels; the limit is in the integration options."
@@ -602,7 +605,7 @@
         },
         "preview": {
           "title": "Trial run",
-          "description": "Mentat built the state below from the readings as they stand now.\n\n{grouping}\n\n### Answer right now\n\n{answer}\n\n### State sent\n\n```\n{state}\n```"
+          "description": "Mentat built the state below from the readings as they stand now.\n\n{grouping}\n\n### Answer right now\n\n{answer}\n\n### State sent\n\n{state}"
         }
       },
       "error": {
@@ -616,6 +619,7 @@
         "window_settle_too_long": "The quiet before judging cannot be longer than the window.",
         "window_events_invalid": "Bus events are a list of items, each with an event_type and optionally data and label.",
         "window_event_is_own": "A window cannot log Mentat's own events such as mentat_decision. Each answer fires one, so the question would ask again after every answer.",
+        "window_event_too_wide": "A window cannot log * or state_changed. Each hears the whole house, Mentat's own answers among them. Pick entities for state changes, or name the event.",
         "release_without_cutoff": "A verdict turns off below this, so it needs a cutoff to turn on at.",
         "release_over_cutoff": "This has to be at most the cutoff. Above it, one probability would turn the verdict both on and off.",
         "fallback_needs_floor": "A fallback shows under the lowest confidence, so give that a value too."
@@ -821,7 +825,7 @@
       "fields": {
         "note": {
           "name": "Note",
-          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+          "description": "The text to judge. A template is rendered once, by the automation or script that calls the action. With entities picked it is sent as the note next to their readings."
         },
         "pictures": {
           "name": "Pictures",
@@ -867,7 +871,7 @@
       "fields": {
         "note": {
           "name": "Note",
-          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+          "description": "The text to judge. A template is rendered once, by the automation or script that calls the action. With entities picked it is sent as the note next to their readings."
         },
         "pictures": {
           "name": "Pictures",
@@ -909,7 +913,7 @@
       "fields": {
         "note": {
           "name": "Note",
-          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+          "description": "The text to judge. A template is rendered once, by the automation or script that calls the action. With entities picked it is sent as the note next to their readings."
         },
         "pictures": {
           "name": "Pictures",
@@ -951,7 +955,7 @@
       "fields": {
         "note": {
           "name": "Note",
-          "description": "The text to judge. A template is rendered before it is sent. With entities picked it is sent as the note next to their readings."
+          "description": "The text to judge. A template is rendered once, by the automation or script that calls the action. With entities picked it is sent as the note next to their readings."
         },
         "pictures": {
           "name": "Pictures",

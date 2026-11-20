@@ -160,6 +160,11 @@ def test_window_schema_fills_the_defaults() -> None:
             {"duration": 900, "events": [{"event_type": "mentat_whatever"}]},
             "Mentat fires it after every answer",
         ),
+        ({"duration": 900, "events": [{"event_type": "*"}]}, "cannot log '\\*'"),
+        (
+            {"duration": 900, "events": [{"event_type": "state_changed"}]},
+            "cannot log 'state_changed': it hears every entity",
+        ),
     ],
 )
 def test_window_schema_refuses_out_of_range(window: dict[str, Any], fragment: str) -> None:

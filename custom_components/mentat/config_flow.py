@@ -58,7 +58,6 @@ from .const import (
 )
 from .editor import MentatQuestionSubentryFlow
 from .providers import (
-    PROVIDER_CLOUDFLARE,
     PROVIDER_GENERIC,
     PROVIDER_LOCAL_CLEF,
     PROVIDER_TYPESAFE,
@@ -68,6 +67,7 @@ from .providers import (
     Provider,
     default_image_format,
     entry_unique_id,
+    model_offered,
     price_for,
     provider_for,
     resolve_url,
@@ -211,9 +211,8 @@ def _parse_form(user_input: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str
         model = _normalised_model(advanced.get(CONF_MODEL)) or model
     except ValueError:
         errors[CONF_MODEL] = "model_refused"
-    if name == PROVIDER_CLOUDFLARE and model not in preset.models:
-        # Workers AI publishes exactly these two, so anything else is a typo and
-        # can be named without spending a request on it.
+    if CONF_MODEL not in errors and not model_offered(preset, model):
+        # Named without spending a request on it.
         errors[CONF_MODEL] = "model_refused"
 
     dialect, image_format = preset.dialect, preset.image_format

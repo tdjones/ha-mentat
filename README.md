@@ -401,6 +401,11 @@ mentat:
   the target's. The readings still come from the target.
 - A window cannot log `mentat_decision` or any other `mentat_` event: the
   watch would ask again after each of its own answers.
+- Nor can it log `*` or `state_changed`. Each hears the whole house, Mentat's own
+  answers among them, past the target and its limit of 100. Give the watch
+  entities for state changes, and name the bus events. A question saved in the
+  editor with either before this was refused keeps loading, and its window never
+  logs a Mentat event or a change to a Mentat entity.
 - `with_attributes` and `collapse_repeats` also go under `window:`. There,
   `with_attributes` adds attributes to each log row; the watch's own
   `with_attributes` adds them to the entity records. `collapse_repeats` defaults
@@ -540,7 +545,10 @@ Revising a question's entities, note, schedule or window changes its watch key.
 
 Every action returns its answer as a response and needs `response_variable`.
 Each that asks the model takes `config_entry` when more than one Mentat entry is
-loaded, and `model` to use another model for that one request.
+loaded, and `model` to use another model for that one request. A model id has no
+spaces, and with Cloudflare it is `clef-flash` or `clef`, because the id becomes
+part of the address the key is sent to. A key refused for a model named this way
+starts no reauthentication; the entry's own model finds out on its next request.
 `mentat.calibrate` asks nothing and takes neither.
 
 <img src="docs/images/action_response.png" alt="Developer tools running mentat.noul on the washing machine power sensor, with the response below" width="640">
@@ -551,7 +559,7 @@ of a target, `note` or `pictures`:
 | Field | What it is |
 | --- | --- |
 | target | Entities, devices, areas, floors or labels to read. |
-| `note` | Text or a template. A template is rendered for an automation, a script or an administrator. For any other user calling from the developer tools or the API, it goes to the model as written, so it cannot read entities their permissions hide. |
+| `note` | Text, or a template that the automation or script calling the action renders first. Mentat sends the note as it arrives and never renders it again, so braces in an MQTT payload or a webhook body reach the model as text and cannot read the house. A template sent through the REST API goes as written. |
 | `pictures` | Up to four camera or image entities, or full paths of image files. See [Pictures](#pictures). |
 | `with_attributes` | Send every attribute after redaction. Off by default. |
 
@@ -842,14 +850,26 @@ Mentat removes these attributes, and keys inside event data, at every depth,
 whatever their case:
 
 - `access_token`, `entity_picture`, `entity_picture_local`, `latitude`,
-  `longitude` and `gps_accuracy`;
+  `longitude`, `gps_accuracy`, `gps`, `location`, `coordinates`, `address`,
+  `ip_address`, `mac_address`, `email`, `code`, `pin`, `session` and
+  `session_id`, matched as the whole key;
 - `url`, `uri` and any key ending in `_url` or `_uri`;
-- any key that contains `token`, `password`, `secret`, `picture`, `image_url`,
-  `credential` or `api_key`.
+- any key that contains `token`, `password`, `passwd`, `passphrase`, `passcode`,
+  `secret`, `picture`, `image_url`, `credential`, `api_key`, `apikey`,
+  `private_key`, `authorization`, `bearer`, `cookie` or `webhook`.
 
-The match is on part of the key, so an attribute such as `tokens_used` goes too.
-The rules touch keys only. A state, a note, a brief or an entity name that holds
-an address is sent as written.
+The last list matches part of the key, so an attribute such as `tokens_used` goes
+too. The short words of the first list match only a whole key, so `code_format`
+and `opinion` stay.
+
+A value that is an address with a login or a query in it, such as
+`/api/camera_proxy/camera.yard?token=...` or `rtsp://user:pass@192.0.2.20/live`,
+goes too, under whatever key holds it. Text with a space in it is never taken
+for an address. Objects an integration leaves in its attributes are turned into
+plain data first, so the rules reach inside them.
+
+The rules cover attributes and event data. A state, a note, a brief or an entity
+name that holds an address is sent as written.
 
 Without `with_attributes`, an entity record has its id, name, state, unit, device
 class, area and age, and nothing else.
@@ -859,7 +879,11 @@ class, area and age, and nothing else.
 - A request waits 30 seconds for an answer, jevclient's own default. Mentat does
   not retry; the next schedule or wake asks again.
 - A rejected key starts reauthentication, and the watch's schedule pauses until
-  the key is replaced.
+  the key is replaced. An action that named its own `model` starts none.
+- Mentat follows no redirect from a Clef server, and reads at most 1 MiB of its
+  reply, a limit nobody has measured that sits far above any answer. A redirect fails with a message saying to give the entry the address
+  itself. An error names the server alone, without the path that holds a
+  Cloudflare account id.
 - A server that asks Mentat to slow down is left alone for as long as it says,
   even past the schedule.
 - Any other failure, such as a timeout, a 5xx or a reply Mentat cannot read,
@@ -890,6 +914,10 @@ first entry's provider and dialect, and whether its server answers.
   durations and counts in a Jinja template and send the result.
 - Do not let an answer unlock a door, disarm an alarm or do anything else where a
   wrong answer hurts someone.
+- Whatever the model reads can argue with the question: a sign held up to a
+  camera, a calendar title, the text of an MQTT payload. Pair an answer that
+  matters with a condition the model cannot be talked out of, such as a contact
+  sensor or the time of day.
 - A request takes from a few hundred milliseconds to a few seconds, more with
   pictures. Mentat suits decisions that can wait that long.
 
@@ -911,7 +939,7 @@ first entry's provider and dialect, and whether its server answers.
 | "Nothing by these names exists" | A device, area, floor or label in the target was removed or renamed. The whole request is refused, not only that part. |
 | "None of the picked entities has a state right now" | Every picked entity is missing, for example after a rename. |
 | "The target expands to N entities and one request may carry 250" | Every entity is billed on every request. Pick fewer, or split the watch. A window watch takes at most 100. |
-| "could not render its note" or "Template error in the note" | The note's template raised an error. Try it under Developer tools, Template. |
+| "could not render its note" | A watch's note template raised an error. Try it under Developer tools, Template. |
 | "Question key is missing its type or its instructions" | A `mentat.ask` question lacks `type` or `instructions`. |
 | "is a box, and a box needs a picture under pictures" | A `mentat.ask` call has a box question and no `pictures`. |
 | "is not a picture source" | A picture is neither a camera or image entity nor a full path starting with `/`. |

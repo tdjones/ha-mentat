@@ -34,6 +34,10 @@ SYSTEMONE_PATH: Final = "/v1/systemone"
 
 # Seconds a request may take: jevclient's own DEFAULT_TIMEOUT, used for both dialects.
 REQUEST_TIMEOUT_SECONDS: Final = 30.0
+# Bytes of a Clef reply read before giving up on it. A choice nobody has
+# measured: an answer is hundreds of bytes, and 255 options with their
+# probabilities stay well under this, so only a broken server reaches it.
+MAX_REPLY_BYTES: Final = 1024 * 1024
 
 # The shortest schedule a watch may have. There is no rate floor beyond it: a
 # decision model answers in well under a second, the daily token budget is what

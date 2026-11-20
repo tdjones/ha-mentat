@@ -327,6 +327,37 @@ def ui_entry(*questions: ConfigSubentryData) -> MockConfigEntry:
     )
 
 
+async def test_a_question_saved_with_a_wildcard_event_still_loads_and_ignores_answers(
+    hass: HomeAssistant, fake_client: MagicMock
+) -> None:
+    """The editor refuses `*` now, but a question saved before that is kept."""
+    entry = ui_entry(
+        ui_question(
+            "Rinsed",
+            window_enabled=True,
+            window_duration={"hours": 0, "minutes": 45, "seconds": 0},
+            window_max_events=60,
+            window_settle=0,
+            window_evaluate="on_event",
+            window_collapse_repeats=False,
+            window_events=[{"event_type": "*", "data": {}}],
+        )
+    )
+    hass.states.async_set(DISHWASHER, "40")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    asked = fake_client.ask.await_count
+    # An answer fires mentat_decision and moves Mentat's own sensors. Heard by
+    # `*`, either would settle the window and ask again, forever.
+    hass.bus.async_fire("mentat_decision", {"watch": "rinsed"})
+    await hass.async_block_till_done()
+    assert fake_client.ask.await_count == asked
+    hass.bus.async_fire("dishwasher_door", {"open": True})
+    await hass.async_block_till_done()
+    assert fake_client.ask.await_count == asked + 1
+
+
 async def test_watches_from_subentries_same_state_is_one_request(
     hass: HomeAssistant, fake_client: MagicMock
 ) -> None:
