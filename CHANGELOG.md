@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-11-24)
 
 - The documentation and issue links in Home Assistant, and the README, go to
   GitHub. They led to a GitLab project that asks you to sign in. Report problems
