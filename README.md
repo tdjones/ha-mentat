@@ -86,9 +86,8 @@ in the options if it bills you.
 
 ## Install
 
-Mentat lives on [GitLab](https://gitlab.com/tdjones8081/ha-mentat) and is mirrored
-to [GitHub](https://github.com/tdjones/ha-mentat) for HACS. Report problems on
-GitLab.
+Mentat is published on [GitHub](https://github.com/tdjones/ha-mentat). Report
+problems in its [issues](https://github.com/tdjones/ha-mentat/issues).
 
 ### With HACS
 

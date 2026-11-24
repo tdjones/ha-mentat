@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- The documentation and issue links in Home Assistant, and the README, go to
+  GitHub. They led to a GitLab project that asks you to sign in. Report problems
+  at `https://github.com/tdjones/ha-mentat/issues`.
+
+What to do: nothing.
+
 ## 0.2.0 (2026-11-23)
 
 The first version on HACS. Mentat asks System One decision models typed questions
