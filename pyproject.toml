@@ -1,6 +1,6 @@
 [project]
 name = "ha-mentat"
-version = "0.1.0"
+version = "0.2.0"
 description = "Home Assistant integration for System One decision models (Jev, Clef)"
 license = "MIT"
 requires-python = ">=3.14"

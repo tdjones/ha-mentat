@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-23)
+
+The first version on HACS. Mentat asks System One decision models typed questions
+about your house and answers as sensors, action responses and events. What it
+does is in the README; the changes below matter if you already run a copy of 0.1.0
+installed by hand.
 
 - An action sends its `note` as it arrives and never renders it again. A script
   or an automation renders its data before the call, so braces left in a note
@@ -77,7 +82,7 @@
 
 ## 0.1.0 (2026-11-01)
 
-The first release. Not dated until the release commit.
+The first version, never published as a release.
 
 - Connects to TypeSafe Jev, OpenRouter, Cloudflare Workers AI (Clef and
   Clef-flash), a local Clef server, or any System One server in either dialect.
