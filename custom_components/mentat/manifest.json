@@ -2,6 +2,7 @@
   "domain": "mentat",
   "name": "Mentat",
   "after_dependencies": ["recorder"],
+  "categories": ["ai_voice.ai_models"],
   "codeowners": ["@tdjones"],
   "config_flow": true,
   "dependencies": [],
